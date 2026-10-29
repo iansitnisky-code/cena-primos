@@ -1,0 +1,13 @@
+{
+  "name": "cena-primos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Votaciones de la cena mensual de primos",
+  "scripts": {
+    "test": "node test/logic.test.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.7"
+  }
+}
