@@ -20,11 +20,15 @@ const vote = (who, dinnerId, v, extra = {}) => call("POST", "/vote", { who, body
 assert.equal((await call("GET", "/state")).status, 401, "estado exige sesión");
 assert.equal((await call("GET", "/roster", { code: "mal" })).status, 401);
 assert.equal((await call("GET", "/roster", { code: "fam" })).body.claimed.length, 0);
-const reg = (p, extra = {}) => call("POST", "/register", { code: "fam", body: { personId: p.id, name: p.name.split(" ")[0] + " Apellido", phone: "+56 9 1234 5678", email: `${p.id}@mail.cl`, password: "password1", ...extra } });
+const tinyAv = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ";
+const reg = (p, extra = {}) => call("POST", "/register", { code: "fam", body: { personId: p.id, name: p.name.split(" ")[0] + " Apellido", phone: "+56 9 1234 5678", email: `${p.id}@mail.cl`, password: "password1", avatar: tinyAv, ...extra } });
 assert.equal((await call("POST", "/register", { code: "mal", body: { personId: "ian", name: "Ian", phone: "+56912345678", email: "ian@mail.cl", password: "password1" } })).status, 401, "código familiar requerido");
 assert.equal((await reg(PEOPLE[0], { email: "malo" })).status, 400);
 assert.equal((await reg(PEOPLE[0], { phone: "12" })).status, 400);
 assert.equal((await reg(PEOPLE[0], { password: "corta" })).status, 400);
+assert.equal((await reg(PEOPLE[0], { avatar: "" })).status, 400, "la foto es obligatoria");
+assert.equal((await reg(PEOPLE[0], { avatar: "data:text/html;base64,PGI+" })).status, 400, "solo imágenes");
+assert.equal((await reg(PEOPLE[0], { avatar: "data:image/jpeg;base64," + "A".repeat(95000) })).status, 413, "foto muy pesada");
 for (const p of PEOPLE) { const r = await reg(p); assert.equal(r.status, 200); tokens[p.id] = r.body.token; }
 assert.equal((await reg(PEOPLE[0])).status, 409, "persona ya registrada");
 assert.equal((await reg({ id: "ian", name: "Ian" }, { email: "valentina@mail.cl" })).status, 409, "correo/persona repetidos");
@@ -38,6 +42,17 @@ let me = (await state("ian"));
 assert.equal(me.profile.name, "Ian Apellido"); assert.equal(me.profile.email, "ian@mail.cl");
 assert.equal(me.names.elisa, "Elisa Apellido");
 assert.ok(!JSON.stringify(me).includes("pwHash"));
+// fotos de perfil
+assert.ok(me.avatarAt.ian > 0 && me.avatarAt.elisa > 0, "avatarAt en el estado");
+const av = await call("POST", "/avatars", { who: "elisa", body: { ids: ["ian", "elisa", "nadie"] } });
+assert.equal(av.body.avatars.ian.dataUrl, tinyAv); assert.equal(Object.keys(av.body.avatars).length, 2);
+const newAv = "data:image/png;base64,iVBORw0KGgo=";
+assert.equal((await call("POST", "/avatar", { who: "ian", body: { dataUrl: "javascript:alert(1)" } })).status, 400);
+const up = await call("POST", "/avatar", { who: "ian", body: { dataUrl: newAv } });
+assert.equal(up.status, 200);
+assert.equal((await call("POST", "/avatars", { who: "elisa", body: { ids: ["ian"] } })).body.avatars.ian.dataUrl, newAv);
+assert.ok((await state("elisa")).avatarAt.ian >= up.body.at, "avatarAt cambia al subir otra foto");
+assert.equal((await call("POST", "/avatars", { body: { ids: ["ian"] } })).status, 401, "avatars exige sesión");
 // perfil y contraseña
 assert.equal((await call("POST", "/profile", { who: "ian", body: { name: "Ian S.", phone: "+56 9 8765 4321" } })).status, 200);
 assert.equal((await state("ian")).profile.name, "Ian S.");

@@ -151,14 +151,16 @@ async function loadCtx(store, env) {
     loadAll(store, "payconf/"),
     loadAll(store, "people/"),
   ]);
-  const names = {}, phones = {};
-  Object.entries(accounts).forEach(([id, a]) => { names[id] = a.name; phones[id] = a.phone; });
-  return { votes, rsvp, payconf, accounts, names, phones, claimed: Object.keys(accounts), today: env.TODAY || todayCL() };
+  const names = {}, phones = {}, avatarAt = {};
+  Object.entries(accounts).forEach(([id, a]) => { names[id] = a.name; phones[id] = a.phone; if (a.avatarAt) avatarAt[id] = a.avatarAt; });
+  return { votes, rsvp, payconf, accounts, names, phones, avatarAt, claimed: Object.keys(accounts), today: env.TODAY || todayCL() };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const cleanPhone = (v) => String(v || "").replace(/[^\d+]/g, "");
 const validPhone = (v) => { const d = cleanPhone(v).replace(/\D/g, ""); return d.length >= 8 && d.length <= 15; };
+const AVATAR_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const AVATAR_MAX = 90000;
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 45;
 
 export async function handle({ method, path, headers, body, store, env }) {
@@ -190,9 +192,13 @@ export async function handle({ method, path, headers, body, store, env }) {
     if (!EMAIL_RE.test(email)) return fail(400, "bad_email", "Correo no válido.");
     if (!validPhone(b.phone)) return fail(400, "bad_phone", "Teléfono no válido.");
     if (password.length < 8 || password.length > 100) return fail(400, "bad_password", "La contraseña debe tener al menos 8 caracteres.");
+    const avatar = String(b.avatar || "");
+    if (!AVATAR_RE.test(avatar)) return fail(400, "bad_avatar", "Sube tu foto de perfil para continuar.");
+    if (avatar.length > AVATAR_MAX) return fail(413, "avatar_too_big", "La foto es muy pesada, prueba con otra.");
     if (await store.get(`people/${person.id}`)) return fail(409, "taken", "Esa persona ya tiene cuenta.");
     if (await store.get(`emails/${sha(email)}`)) return fail(409, "email_taken", "Ese correo ya está registrado.");
-    const rec = { name, email, phone: cleanPhone(b.phone), pwHash: hashPassword(password), createdAt: Date.now() };
+    const rec = { name, email, phone: cleanPhone(b.phone), pwHash: hashPassword(password), createdAt: Date.now(), avatarAt: Date.now() };
+    await store.set(`avatars/${person.id}`, { dataUrl: avatar, at: rec.avatarAt });
     await store.set(`people/${person.id}`, rec);
     await store.set(`emails/${sha(email)}`, { pid: person.id });
     return ok({ token: mkToken(person.id, rec) });
@@ -276,7 +282,7 @@ export async function handle({ method, path, headers, body, store, env }) {
     dinners.sort((a, b) => (b.month || "").localeCompare(a.month || ""));
     const { ranking, lastRevealed } = seasonWithMovement(dinners);
     return ok({
-      households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names,
+      households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt,
       me: me.id, profile: { name: ctx.names[me.id], phone: ctx.phones[me.id], email: ctx.accounts[me.id].email },
       mine: ctx.votes[me.id] || {},
       dinners, season: ranking, lastRevealed,
@@ -303,6 +309,23 @@ export async function handle({ method, path, headers, body, store, env }) {
     if (!validPhone(body && body.phone)) return fail(400, "bad_phone", "Teléfono no válido.");
     await store.set(`people/${me.id}`, { ...rec, name, phone: cleanPhone(body.phone) });
     return ok({ ok: true });
+  }
+  if (path === "/avatar") {
+    const url = String((body && body.dataUrl) || "");
+    if (!AVATAR_RE.test(url)) return fail(400, "bad_avatar", "Formato de imagen no válido.");
+    if (url.length > AVATAR_MAX) return fail(413, "avatar_too_big", "La foto es muy pesada, prueba con otra.");
+    const rec = await store.get(`people/${me.id}`);
+    const at = Date.now();
+    await store.set(`avatars/${me.id}`, { dataUrl: url, at });
+    await store.set(`people/${me.id}`, { ...rec, avatarAt: at });
+    return ok({ ok: true, at });
+  }
+  if (path === "/avatars") {
+    const ids = (Array.isArray(body && body.ids) ? body.ids : []).filter((i) => personById(i)).slice(0, 20);
+    const docs = await Promise.all(ids.map((i) => store.get(`avatars/${i}`)));
+    const avatars = {};
+    ids.forEach((i, k) => { if (docs[k]) avatars[i] = { at: docs[k].at, dataUrl: docs[k].dataUrl }; });
+    return ok({ avatars });
   }
   if (path === "/password") {
     const rec = await store.get(`people/${me.id}`);
@@ -467,6 +490,7 @@ export async function handle({ method, path, headers, body, store, env }) {
       if (!personById(body.personId)) return fail(400, "bad_person", "Persona no válida.");
       const rec = await store.get(`people/${body.personId}`);
       if (rec && rec.email) await store.delete(`emails/${sha(rec.email)}`);
+      await store.delete(`avatars/${body.personId}`);
       await store.delete(`people/${body.personId}`);
       return ok({ ok: true });
     }
