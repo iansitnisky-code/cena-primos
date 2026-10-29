@@ -101,15 +101,23 @@ function seasonFrom(list) {
     .sort((a, b) => b.overall - a.overall);
 }
 
-/** Ranking FINAL de la temporada: solo se entrega cuando todas las parejas fueron anfitrionas y
- *  todas las cenas publicadas tienen sus votos completos (o el admin cierra la temporada). */
-function seasonSummary(dinnersOut, closed) {
+/** Ranking de la temporada: se actualiza cena a cena. Una cena suma SOLO cuando está completa
+ *  (publicada por el host y con los votos de todos sus asistentes; o cerrada por el admin). */
+function seasonSummary(dinnersOut) {
   const revealed = dinnersOut.filter((d) => d.revealed);
   const hosted = HOUSEHOLDS.filter((h) => revealed.some((d) => d.hostId === h.id));
-  const allPublishedRevealed = dinnersOut.filter((d) => d.published).every((d) => d.revealed);
-  const complete = !!closed || (hosted.length === HOUSEHOLDS.length && allPublishedRevealed);
-  const ranking = complete ? seasonFrom(revealed.filter((d) => d.results && d.results.overall != null)) : [];
-  return { complete, closed: !!closed, hosted: hosted.length, hostedIds: hosted.map((h) => h.id), total: HOUSEHOLDS.length, revealed: revealed.length, ranking };
+  const complete = hosted.length === HOUSEHOLDS.length && dinnersOut.filter((d) => d.published).every((d) => d.revealed);
+  const withRes = revealed.filter((d) => d.results && d.results.overall != null);
+  const cur = seasonFrom(withRes);
+  let last = null;
+  withRes.forEach((d) => { if (!last || (d.revealedAt || 0) > (last.revealedAt || 0)) last = d; });
+  const prev = last ? seasonFrom(withRes.filter((d) => d !== last)) : [];
+  const pos = new Map(prev.map((x, i) => [x.hostId, i]));
+  const ranking = cur.map((x, i) => ({ ...x, delta: pos.has(x.hostId) ? pos.get(x.hostId) - i : null }));
+  return {
+    complete, hosted: hosted.length, hostedIds: hosted.map((h) => h.id), total: HOUSEHOLDS.length, revealed: revealed.length, ranking,
+    lastRevealed: last ? { id: last.id, hostId: last.hostId, month: last.month, title: last.title || "", at: last.revealedAt || 0 } : null,
+  };
 }
 
 const str = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
@@ -227,7 +235,7 @@ export async function handle({ method, path, headers, body, store, env }) {
 
   // ---------- GET /state ----------
   if (method === "GET" && path === "/state") {
-    const [dinnerMap, ctx, bannerIdx, seasonMeta] = await Promise.all([loadAll(store, "dinners/"), loadCtx(store, env), store.get("meta/banner"), store.get("meta/season")]);
+    const [dinnerMap, ctx, bannerIdx] = await Promise.all([loadAll(store, "dinners/"), loadCtx(store, env), store.get("meta/banner")]);
     const dinners = [];
     for (const [id, d0] of Object.entries(dinnerMap)) {
       const d = { ...d0, id };
@@ -279,7 +287,7 @@ export async function handle({ method, path, headers, body, store, env }) {
       dinners.push(out);
     }
     dinners.sort((a, b) => (b.month || "").localeCompare(a.month || ""));
-    const season = seasonSummary(dinners, seasonMeta && seasonMeta.closed);
+    const season = seasonSummary(dinners);
     return ok({
       households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt, banner: bannerIdx || [],
       me: me.id, profile: { name: ctx.names[me.id], phone: ctx.phones[me.id], email: ctx.accounts[me.id].email },
@@ -555,10 +563,6 @@ export async function handle({ method, path, headers, body, store, env }) {
           if (doc[id]) { delete doc[id]; await store.set(`${prefix}${pId}`, doc); }
         }
       }
-      return ok({ ok: true });
-    }
-    if (action === "closeSeason" || action === "reopenSeason") {
-      await store.set("meta/season", { closed: action === "closeSeason", at: Date.now() });
       return ok({ ok: true });
     }
     if (action === "removeBanner") {

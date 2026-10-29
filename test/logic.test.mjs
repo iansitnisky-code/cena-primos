@@ -158,9 +158,10 @@ assert.equal(d.revealed, true);
 assert.equal(d.results.n, yes.length);
 assert.equal(d.results.messages.find((m) => m.msg === "anónimo").name, null);
 assert.equal(d.results.messages.find((m) => m.msg === "hola de elisa").name, "Elisa Apellido");
-assert.deepEqual(st.season.ranking, [], "el ranking NO es en vivo: sigue oculto tras revelar la primera cena");
+assert.equal(st.season.ranking[0].hostId, "h1", "al completarse la cena, entra al ranking");
+assert.equal(st.season.ranking[0].delta, null, "primera cena: sin movimiento");
 assert.equal(st.season.hosted, 1); assert.equal(st.season.total, 7); assert.equal(st.season.complete, false);
-assert.equal(st.lastRevealed, undefined, "ya no hay aviso de ranking en vivo");
+assert.equal(st.season.lastRevealed.id, id1);
 assert.equal((await vote("elisa", id1, 1)).status, 409);
 assert.equal((await call("POST", "/rsvp", { who: "elisa", body: { dinnerId: id1, status: "no" } })).status, 409);
 
@@ -219,18 +220,24 @@ assert.equal((await vote("kiki", id2, 7)).status, 409, "antes de la fecha");
 env.TODAY = "2026-12-06"; // pasó la fecha: se abre sola
 await vote("kiki", id2, 7); await vote("cami", id2, 7);
 st = await state("kiki");
-assert.deepEqual(st.season.ranking, [], "con 2 de 7 cenas el ranking sigue oculto");
-assert.equal(st.season.hosted, 2);
+assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1"], "se actualiza cena a cena");
+assert.equal(st.season.ranking[0].delta, null, "entra nueva");
+assert.equal(st.season.ranking[1].delta, -1, "h1 baja una posición");
+assert.equal(st.season.hosted, 2); assert.equal(st.season.lastRevealed.id, id2);
 
-// ---- Ranking final ----
-assert.equal((await call("POST", "/admin", { who: "cami", body: { adminCode: "x", action: "closeSeason" } })).status, 403);
-await call("POST", "/admin", { who: "cami", body: { adminCode: "adm", action: "closeSeason" } });
-st = await state("kiki");
-assert.equal(st.season.complete, true);
-assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1"], "ponderado final: h3 (6,6) por sobre h1 (6,0)");
-assert.ok(st.season.ranking.every((x) => !("delta" in x)), "sin movimientos");
-await call("POST", "/admin", { who: "cami", body: { adminCode: "adm", action: "reopenSeason" } });
-assert.deepEqual((await state("kiki")).season.ranking, [], "reabrir vuelve a ocultarlo");
+
+// ---- Cena 3 (h4): una cena con votos pendientes NO suma al ranking hasta que todos voten ----
+const id3 = (await call("POST", "/dinner", { who: "kiki", body: { month: "2026-12", hostId: "h4", title: "Parrillada", date: "2026-12-01", dishes: ["x"] } })).body.id;
+await call("POST", "/publish", { who: "kiki", body: { dinnerId: id3 } });
+for (const w of ["ian", "cami"]) await call("POST", "/rsvp", { who: w, body: { dinnerId: id3, status: "yes" } });
+await vote("ian", id3, 5);
+st = await state("ian");
+assert.deepEqual(st.dinners.find((x) => x.id === id3).pending, ["cami"]);
+assert.ok(!st.season.ranking.some((x) => x.hostId === "h4"), "con un voto pendiente la cena no entra al ranking");
+await vote("cami", id3, 6);
+st = await state("ian");
+assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1", "h4"], "al votar el último, la cena entra");
+assert.equal(st.season.lastRevealed.id, id3);
 
 // ---- Admin ----
 assert.equal((await call("POST", "/admin", { who: "ian", body: { adminCode: "x", action: "reveal", dinnerId: idX } })).status, 403);
@@ -249,7 +256,7 @@ for (const [who, h] of [["florencia", "h2"], ["kiki", "h4"], ["cami", "h5"], ["b
 }
 st = await state("ian");
 assert.equal(st.season.hosted, 7); assert.equal(st.season.complete, true, "temporada completa");
-assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1"]);
+assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1", "h4"]);
 await call("POST", "/admin", { who: "ian", body: { adminCode: "adm", action: "deleteDinner", dinnerId: id1 } });
 st = await state("ian");
 assert.ok(!st.dinners.some((x) => x.id === id1));

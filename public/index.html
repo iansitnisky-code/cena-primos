@@ -212,7 +212,7 @@ const HC=['#1877F2','#F26B21','#D6457F','#1DA1D6','#6B5CE7','#1FA667','#D18B00']
 const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const LS={get:k=>{try{return localStorage.getItem('cena.'+k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem('cena.'+k,v)}catch(e){}},del:k=>{try{localStorage.removeItem('cena.'+k)}catch(e){}}};
 const SS=(function(){try{const t='__t';sessionStorage.setItem(t,'1');sessionStorage.removeItem(t);return sessionStorage}catch(e){const m={};return{getItem:k=>m[k]||null,setItem:(k,v)=>{m[k]=String(v)},removeItem:k=>{delete m[k]}}}})();
-const S={cfg:null,fee:10000,claimed:[],names:{},me:null,profile:null,mine:{},dinners:[],season:{complete:false,hosted:0,hostedIds:[],total:7,revealed:0,ranking:[]},token:LS.get('token'),loaded:false,fatal:null,route:'home',view:null,form:null,draft:{},confirm:null,admin:SS.getItem('cena.admin')||'',adminErr:'',seenAt:+(LS.get('seenAt')||0),seenIds:null,photos:{},lightbox:null,avatarAt:{},avatars:{},gallery:{},galTarget:null,photoTarget:null,banner:[],bnPhotos:{},bnIndex:0,
+const S={cfg:null,fee:10000,claimed:[],names:{},me:null,profile:null,mine:{},dinners:[],season:{complete:false,hosted:0,hostedIds:[],total:7,revealed:0,ranking:[],lastRevealed:null},token:LS.get('token'),loaded:false,fatal:null,route:'home',view:null,form:null,draft:{},confirm:null,admin:SS.getItem('cena.admin')||'',adminErr:'',seenAt:+(LS.get('seenAt')||0),seenIds:null,photos:{},lightbox:null,avatarAt:{},avatars:{},gallery:{},galTarget:null,photoTarget:null,banner:[],bnPhotos:{},bnIndex:0,
   auth:{mode:'login',step:0,f:{},err:'',busy:false},pwOpen:false};
 const app=document.getElementById('app'),toastEl=document.getElementById('toast');
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -273,8 +273,9 @@ async function refresh(){
     const st=await api('GET','/state');
     S.cfg={households:st.households};S.fee=st.fee;S.claimed=st.claimed;S.names=st.names;S.me=st.me;S.profile=st.profile;S.mine=st.mine;S.dinners=st.dinners;S.season=st.season;S.avatarAt=st.avatarAt||{};S.banner=st.banner||[];S.loaded=true;S.fatal=null;
     const now=new Set(st.dinners.filter(d=>d.revealed).map(d=>d.id));
-    if(S.seenIds){const fresh=[...now].filter(id=>!S.seenIds.has(id));if(fresh.length)toast('Se revelaron los resultados de una cena')}
+    if(S.seenIds){const fresh=[...now].filter(id=>!S.seenIds.has(id));if(fresh.length)toast('🏆 Ranking actualizado: se completó una cena nueva')}
     S.seenIds=now;
+    if(S.route==='ranking'&&S.season.lastRevealed&&S.season.lastRevealed.at>S.seenAt){S.seenAt=S.season.lastRevealed.at;LS.set('seenAt',String(S.seenAt))}
     schedule();
     loadAvatars();
     loadBanner();
@@ -426,6 +427,7 @@ function photoCard(d){
 }
 
 /* ---------- derivados ---------- */
+const hasNews=()=>!!(S.season.lastRevealed&&S.season.lastRevealed.at>S.seenAt);
 function todoFor(d){
   const m=me();if(!m||!d.published||d.revealed)return 0;
   if(m.h===d.hostId)return d.payments?d.payments.filter(p=>p.state==='claimed').length:0;
@@ -442,7 +444,7 @@ function hero(color,inner){setTop(color);return '<section class="hero" style="--
 function tabsHtml(){
   const n=todoTotal();const cur=S.route==='admin'?'profile':S.route;
   const tab=(r,icn,label,extra)=>'<button data-act="tab" data-t="'+r+'" class="'+(cur===r?'on':'')+'">'+ic(icn,24)+'<span>'+label+'</span>'+(extra||'')+'</button>';
-  return '<nav class="tabs"><div>'+tab('home','home','Cenas',n?'<span class="bd">'+n+'</span>':'')+tab('ranking','trophy','Ranking')+tab('profile','user','Perfil')+'</div></nav>';
+  return '<nav class="tabs"><div>'+tab('home','home','Cenas',n?'<span class="bd">'+n+'</span>':'')+tab('ranking','trophy','Ranking',hasNews()&&S.route!=='ranking'?'<span class="dot"></span>':'')+tab('profile','user','Perfil')+'</div></nav>';
 }
 function render(){
   if(!S.token){app.innerHTML=renderAuth();return}
@@ -660,21 +662,31 @@ function renderResults(d){
 }
 function seasonProgress(){
   const s=S.season;const done=new Set(s.hostedIds||[]);
-  return '<div class="card"><div class="label">Avance de la temporada</div><div class="row" style="margin-top:8px;align-items:flex-end"><div class="money">'+s.hosted+' de '+s.total+'</div><div class="sub">parejas con todos los votos</div></div><div class="prog"><i style="width:'+Math.round(s.hosted/s.total*100)+'%"></i></div><div class="chips">'+S.cfg.households.map(x=>'<span class="chip'+(done.has(x.id)?' ok':'')+'">'+(done.has(x.id)?'✓ ':'')+esc(x.name)+'</span>').join('')+'</div></div>';
+  return '<div class="card"><div class="label">Avance de la temporada</div><div class="row" style="margin-top:8px;align-items:flex-end"><div class="money">'+s.hosted+' de '+s.total+'</div><div class="sub">parejas con una cena completa</div></div><div class="prog"><i style="width:'+Math.round(s.hosted/s.total*100)+'%"></i></div><div class="chips">'+S.cfg.households.map(x=>'<span class="chip'+(done.has(x.id)?' ok':'')+'">'+(done.has(x.id)?'✓ ':'')+esc(x.name)+'</span>').join('')+'</div></div>';
+}
+function deltaHtml(x){
+  if(x.delta==null)return '<span class="delta up">Nuevo</span>';
+  if(x.delta>0)return '<span class="delta up">▲ '+x.delta+'</span>';
+  if(x.delta<0)return '<span class="delta down">▼ '+(-x.delta)+'</span>';
+  return '<span class="delta flat">＝</span>';
 }
 function renderRanking(){
   const s=S.season;const data=s.ranking||[];
-  let h=hero('#F26B21','<div class="hero-row"><div><div class="hello">Temporada '+new Date().getFullYear()+'</div><h1>Ranking final</h1></div><div class="pts">'+ic('trophy',16)+s.hosted+'/'+s.total+'</div></div><div class="sub" style="margin-top:6px">'+(s.complete?'Ponderado final de la temporada':'Se publica solo al final, cuando todos hayan votado')+'</div>')+'<main>';
-  if(!s.complete)return h+'<div class="card center" style="padding:30px 16px"><h3>Aún bloqueado</h3><p class="sub" style="margin:6px 0 0">El ranking no se va actualizando cena a cena. Se publica una sola vez, cuando todas las parejas hayan sido anfitrionas y todos hayan votado todas las cenas.</p></div>'+seasonProgress()+'</main>';
-  if(!data.length)return h+'<div class="card center" style="padding:30px 16px"><p class="sub" style="margin:0">Aún no hay votos para armar el ranking.</p></div></main>';
-  h+='<div class="notice" style="margin:0 0 12px">¡Temporada completa! Este es el ponderado final de todas las cenas.</div><div class="card" style="padding-top:6px;padding-bottom:6px">';
+  let h=hero('#F26B21','<div class="hero-row"><div><div class="hello">Temporada '+new Date().getFullYear()+'</div><h1>Ranking</h1></div><div class="pts">'+ic('trophy',16)+s.hosted+'/'+s.total+'</div></div><div class="sub" style="margin-top:6px">'+(s.complete?'Ponderado final de la temporada':'Suma una cena cuando todos sus asistentes ya votaron')+'</div>')+'<main>';
+  if(!data.length)return h+'<div class="card center" style="padding:30px 16px"><h3>Aún bloqueado</h3><p class="sub" style="margin:6px 0 0">El ranking aparece cuando una cena está completa: el host la publicó y todos sus asistentes ya votaron. Después se actualiza con cada cena que se completa.</p></div>'+seasonProgress()+'</main>';
+  if(s.complete)h+='<div class="notice" style="margin:0 0 12px">¡Temporada completa! Este es el ponderado final de todas las cenas.</div>';
+  else if(s.lastRevealed){
+    const lh=hh(s.lastRevealed.hostId);
+    h+='<div class="notice" style="margin:0 0 12px">Última cena completada: <b>'+esc(s.lastRevealed.title||monthLabel(s.lastRevealed.month))+'</b> de '+esc(lh?lh.name:'')+'. Las flechas muestran cuánto se movió cada pareja.</div>';
+  }
+  h+='<div class="card" style="padding-top:6px;padding-bottom:6px">';
   data.forEach((x,i)=>{
     const host=hh(x.hostId);
-    h+='<div class="rank"><div class="row"><div class="medal m'+(i+1)+'">'+(i+1)+'</div><div class="av round" style="--c:'+hcol(x.hostId)+';width:40px;height:40px;font-size:13px">'+esc(hinit(x.hostId))+'</div><div class="col" style="flex:1"><div class="t">'+esc(host?host.name:'?')+'</div><div class="sub">'+x.n+(x.n===1?' cena':' cenas')+'</div></div><div class="money">'+fmt(x.overall)+'</div></div><div class="prog" style="margin-top:10px"><i style="width:'+((x.overall-1)/6*100)+'%"></i></div><div class="mini">';
+    h+='<div class="rank"><div class="row"><div class="medal m'+(i+1)+'">'+(i+1)+'</div><div class="av round" style="--c:'+hcol(x.hostId)+';width:40px;height:40px;font-size:13px">'+esc(hinit(x.hostId))+'</div><div class="col" style="flex:1"><div class="t">'+esc(host?host.name:'?')+'</div><div class="sub">'+x.n+(x.n===1?' cena':' cenas')+' · '+deltaHtml(x)+'</div></div><div class="money">'+fmt(x.overall)+'</div></div><div class="prog" style="margin-top:10px"><i style="width:'+((x.overall-1)/6*100)+'%"></i></div><div class="mini">';
     CRITERIA.forEach(c=>{const v=x.per[c.k];h+='<div style="--c:'+c.c+'"><div class="label" style="font-size:10px;margin-bottom:3px;letter-spacing:.04em">'+esc(c.t.split(' ')[0])+'</div><div class="bar" style="height:6px"><i style="width:'+(v==null?0:(v-1)/6*100)+'%"></i></div></div><b>'+fmt(v)+'</b>'});
     h+='</div></div>';
   });
-  h+='</div><div class="label sec">Premios por criterio</div><div class="card">';
+  h+='</div>'+(s.complete?'':seasonProgress())+'<div class="label sec">Premios por criterio</div><div class="card">';
   CRITERIA.forEach(c=>{
     const ranked=data.filter(x=>x.per[c.k]!=null);if(!ranked.length)return;
     const best=Math.max.apply(null,ranked.map(x=>r1(x.per[c.k])));
@@ -698,8 +710,6 @@ function renderAdmin(){
   if(!S.admin){
     return h+'<div class="card">'+(S.adminErr?'<div class="err">'+esc(S.adminErr)+'</div>':'')+'<div class="field"><label class="label">Código de admin</label><input type="password" id="admincode" autocomplete="off"></div><button class="btn block" data-act="adminok">Activar</button></div></main>';
   }
-  const sn=S.season;
-  h+='<div class="card"><div class="label">Ranking final</div><p class="sub" style="margin:6px 0 12px">'+(sn.complete?(sn.closed?'Publicado por ti.':'Publicado automáticamente: la temporada está completa.'):'Se publica solo cuando las '+sn.total+' parejas hayan sido anfitrionas y todos hayan votado ('+sn.hosted+' de '+sn.total+' hasta ahora).')+'</p>'+(sn.closed?'<button class="btn ghost sm" data-act="seasonopen">Volver a ocultarlo</button>':(sn.complete?'':(S.confirm==='season'?'<div class="row" style="justify-content:flex-start"><button class="btn danger sm" data-act="seasonclose">Sí, publicar ahora</button><button class="btn ghost sm" data-act="cancelconfirm">Cancelar</button></div>':'<button class="btn ghost sm" data-act="askseason">Publicar ranking final ahora</button>')))+'</div>';
   h+='<div class="card"><div class="label">Restablecer cuenta</div><p class="sub" style="margin:6px 0 12px">Si alguien olvidó su contraseña, libera su cuenta para que se registre de nuevo. Sus votos y confirmaciones se mantienen.</p>';
   S.claimed.forEach(id=>{
     h+='<div class="who"><div class="col"><div class="t">'+esc(fullName(id))+'</div></div>'+(S.confirm==='rel:'+id?'<button class="btn danger sm" data-act="release" data-p="'+id+'">Confirmar</button>':'<button class="btn ghost sm" data-act="askrelease" data-p="'+id+'">Liberar</button>')+'</div>';
@@ -732,7 +742,7 @@ document.addEventListener('keydown',e=>{
   }
 });
 const val=id=>{const el=document.getElementById(id);return el?el.value.trim():''};
-const go=r=>{S.route=r;S.view=null;S.form=null;S.confirm=null;render();window.scrollTo(0,0)};
+const go=r=>{S.route=r;S.view=null;S.form=null;S.confirm=null;if(r==='ranking'&&S.season.lastRevealed){S.seenAt=S.season.lastRevealed.at;LS.set('seenAt',String(S.seenAt))}render();window.scrollTo(0,0)};
 async function authCall(fn){
   S.auth.busy=true;S.auth.err='';render();
   try{await fn()}catch(err){S.auth.err=err.message||'No se pudo completar'}
@@ -752,9 +762,6 @@ document.addEventListener('click',async e=>{
     else if(a==='galswap'){const lb=S.lightbox;S.galTarget={dinnerId:lb.dinnerId,slot:lb.slot};S.lightbox=null;render();const i=document.getElementById('gal-in');if(i)i.click()}
     else if(a==='galdel'){const lb=S.lightbox;await api('POST','/gallery',{dinnerId:lb.dinnerId,slot:lb.slot,remove:true});delete S.gallery[galKey(lb.dinnerId,lb.slot)];S.lightbox=null;toast('Foto quitada');await refresh();render()}
     else if(a==='closezoom'){S.lightbox=null;render()}
-    else if(a==='askseason'){S.confirm='season';render()}
-    else if(a==='seasonclose'){await api('POST','/admin',{adminCode:S.admin,action:'closeSeason'});S.confirm=null;toast('Ranking final publicado');await refresh();render()}
-    else if(a==='seasonopen'){await api('POST','/admin',{adminCode:S.admin,action:'reopenSeason'});toast('Ranking oculto otra vez');await refresh();render()}
     else if(a==='bnadd'){const i=document.getElementById('bn-in');if(i)i.click()}
     else if(a==='bnview'){
       const id=el.dataset.b;
