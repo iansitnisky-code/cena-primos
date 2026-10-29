@@ -165,6 +165,16 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .chip.pc{padding:3px 11px 3px 3px;gap:6px}
 .avpick{width:108px;height:108px;border-radius:50%;background:#F1F3F9;border:3px dashed #B9C1D2;display:grid;place-items:center;margin:0 auto 8px;overflow:hidden;color:var(--mut);font-size:13px;font-weight:500;line-height:1.35;cursor:pointer;padding:0}
 .avpick img{width:100%;height:100%;object-fit:cover;display:block}
+
+.gal{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;margin-top:12px}
+.tile{display:grid;place-items:center;width:100%;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#EEF0F6;color:var(--mut);font-size:26px;font-weight:600;padding:0;border:0}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile.add{background:#F6F7FB;border:2px dashed #C2C9D8}
+.tile.skel2{font-size:12px}
+.tl{font-size:12px;font-weight:600;margin-top:6px;text-align:center;color:var(--ink);line-height:1.25}
+.lightbox figure{margin:0;text-align:center;color:#fff;max-width:100%}
+.lightbox figcaption{margin-top:12px;font-weight:600;font-size:15px}
+.lightbox .acts{display:flex;gap:10px;justify-content:center;margin-top:14px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom,0px));background:var(--ink);color:#fff;padding:11px 18px;border-radius:999px;font-weight:500;font-size:14px;z-index:90;max-width:90%;display:none;text-align:center}
 </style>
 </head>
@@ -174,6 +184,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 <input type="file" id="avatar-cam" accept="image/*" capture="user" hidden>
 <input type="file" id="avatar-gal" accept="image/*" hidden>
 <input type="file" id="photo-in" accept="image/*" hidden>
+<input type="file" id="gal-in" accept="image/*" hidden>
 <noscript>Esta app necesita JavaScript.</noscript>
 <script>
 const CRITERIA=[
@@ -183,11 +194,12 @@ const CRITERIA=[
   {k:'simpatia',t:'Simpatía y buena onda',award:'Corazón de la fiesta',c:'#E5A100'},
   {k:'originalidad',t:'Originalidad',award:'Mente creativa',c:'#1877F2'}
 ];
+const SLOTS=[{k:'decoracion',t:'Decoración'},{k:'ambiente',t:'Ambiente y grupo'},{k:'entrada',t:'Entrada'},{k:'principal',t:'Plato principal'},{k:'postre',t:'Postre'}];
 const HC=['#1877F2','#F26B21','#D6457F','#1DA1D6','#6B5CE7','#1FA667','#D18B00'];
 const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const LS={get:k=>{try{return localStorage.getItem('cena.'+k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem('cena.'+k,v)}catch(e){}},del:k=>{try{localStorage.removeItem('cena.'+k)}catch(e){}}};
 const SS=(function(){try{const t='__t';sessionStorage.setItem(t,'1');sessionStorage.removeItem(t);return sessionStorage}catch(e){const m={};return{getItem:k=>m[k]||null,setItem:(k,v)=>{m[k]=String(v)},removeItem:k=>{delete m[k]}}}})();
-const S={cfg:null,fee:10000,claimed:[],names:{},me:null,profile:null,mine:{},dinners:[],season:[],lastRevealed:null,token:LS.get('token'),loaded:false,fatal:null,route:'home',view:null,form:null,draft:{},confirm:null,admin:SS.getItem('cena.admin')||'',adminErr:'',seenAt:+(LS.get('seenAt')||0),seenIds:null,photos:{},lightbox:null,avatarAt:{},avatars:{},
+const S={cfg:null,fee:10000,claimed:[],names:{},me:null,profile:null,mine:{},dinners:[],season:[],lastRevealed:null,token:LS.get('token'),loaded:false,fatal:null,route:'home',view:null,form:null,draft:{},confirm:null,admin:SS.getItem('cena.admin')||'',adminErr:'',seenAt:+(LS.get('seenAt')||0),seenIds:null,photos:{},lightbox:null,avatarAt:{},avatars:{},gallery:{},galTarget:null,photoTarget:null,
   auth:{mode:'login',step:0,f:{},err:'',busy:false},pwOpen:false};
 const app=document.getElementById('app'),toastEl=document.getElementById('toast');
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -239,7 +251,7 @@ async function api(method,path,body,extra){
 }
 function setSession(token){S.token=token;LS.set('token',token)}
 function logout(silent){
-  S.token=null;LS.del('token');S.me=null;S.loaded=false;S.view=null;S.form=null;S.draft={};S.route='home';S.admin='';SS.removeItem('cena.admin');S.auth={mode:'login',step:0,f:{},err:silent?'Tu sesión expiró. Entra de nuevo.':'',busy:false};S.seenIds=null;S.photos={};S.lightbox=null;S.avatars={};S.avatarAt={};
+  S.token=null;LS.del('token');S.me=null;S.loaded=false;S.view=null;S.form=null;S.draft={};S.route='home';S.admin='';SS.removeItem('cena.admin');S.auth={mode:'login',step:0,f:{},err:silent?'Tu sesión expiró. Entra de nuevo.':'',busy:false};S.seenIds=null;S.photos={};S.lightbox=null;S.avatars={};S.avatarAt={};S.gallery={};
   render();
 }
 async function refresh(){
@@ -253,7 +265,7 @@ async function refresh(){
     if(S.route==='ranking'&&S.lastRevealed&&S.lastRevealed.at>S.seenAt){S.seenAt=S.lastRevealed.at;LS.set('seenAt',String(S.seenAt))}
     schedule();
     loadAvatars();
-    if(S.view)loadPhotoFor(S.view.id);
+    if(S.view){loadPhotoFor(S.view.id);loadGallery(S.view.id)}
   }catch(e){
     if(e.error==='not_logged_in')return;
     if(!S.loaded){S.loaded=true;S.fatal=e.message;render()}
@@ -287,6 +299,43 @@ async function compressImage(file,o){
     if(out.length>hard)throw new Error('La foto es muy pesada, prueba con otra');
     return out;
   }finally{URL.revokeObjectURL(url)}
+}
+// ---------- galería de la cena ----------
+const galKey=(id,k)=>id+'/'+k;
+const galSrc=(d,k)=>{const g=S.gallery[galKey(d.id,k)];return g&&g.at===(d.gallery||{})[k]?g.dataUrl:null};
+async function loadGallery(id){
+  const d=byId(id);if(!d||!d.gallery)return;
+  const need=Object.keys(d.gallery).filter(k=>!galSrc(d,k));
+  if(!need.length)return;
+  try{
+    const r=await api('POST','/gallery/fetch',{dinnerId:id,slots:need});
+    Object.keys(r.photos).forEach(k=>{S.gallery[galKey(id,k)]=r.photos[k]});
+    if(S.view&&S.view.id===id)schedule();
+  }catch(e){}
+}
+async function onGalleryPicked(file,target){
+  try{
+    toast('Subiendo foto…');
+    const dataUrl=await compressImage(file);
+    await api('POST','/gallery',{dinnerId:target.dinnerId,slot:target.slot,dataUrl});
+    await refresh();await loadGallery(target.dinnerId);render();toast('Foto guardada');
+  }catch(err){toast(err&&err.message?err.message:'No se pudo subir la foto')}
+}
+function galleryCard(d){
+  if(!d.published)return '';
+  const have=Object.keys(d.gallery||{});
+  if(!d.isHostSide&&!have.length)return '';
+  let h='<div class="card"><div class="label">Fotos de la cena</div>';
+  if(d.isHostSide)h+='<p class="sub" style="margin:6px 0 0">Sube fotos durante y después de la cena. Quedan guardadas para que todos las revisen.</p>';
+  h+='<div class="gal">';
+  SLOTS.forEach(s=>{
+    const has=!!(d.gallery||{})[s.k];
+    if(!has&&!d.isHostSide)return;
+    const src=galSrc(d,s.k);
+    if(has)h+='<div><button class="tile" data-act="galview" data-id="'+esc(d.id)+'" data-slot="'+s.k+'" aria-label="'+esc(s.t)+'">'+(src?'<img src="'+src+'" alt="'+esc(s.t)+'">':'<span class="skel2">Cargando…</span>')+'</button><div class="tl">'+esc(s.t)+'</div></div>';
+    else h+='<div><button class="tile add" data-act="galadd" data-id="'+esc(d.id)+'" data-slot="'+s.k+'" aria-label="Agregar '+esc(s.t)+'">+</button><div class="tl">'+esc(s.t)+'</div></div>';
+  });
+  return h+'</div></div>';
 }
 // ---------- fotos de perfil ----------
 const avatarSrc=id=>{const a=S.avatars[id];return a&&a.at===S.avatarAt[id]?a.dataUrl:null};
@@ -366,7 +415,7 @@ function render(){
   else if(S.route==='ranking')h=renderRanking();
   else if(S.route==='profile')h=renderProfile();
   else h=renderAdmin();
-  app.innerHTML=h+tabsHtml()+(S.lightbox?'<div class="lightbox" data-act="closezoom"><img src="'+S.lightbox+'" alt="Invitación"></div>':'');
+  app.innerHTML=h+tabsHtml()+(S.lightbox?'<div class="lightbox" data-act="closezoom"><figure><img src="'+S.lightbox.src+'" alt="'+esc(S.lightbox.label||'')+'">'+(S.lightbox.label?'<figcaption>'+esc(S.lightbox.label)+'</figcaption>':'')+(S.lightbox.can?'<div class="acts"><button class="btn sm" data-act="galswap">Cambiar foto</button><button class="btn sm danger" data-act="galdel">Quitar</button></div>':'')+'</figure></div>':'');
 }
 
 /* ---------- auth ---------- */
@@ -416,7 +465,7 @@ function dinnerRow(d,m){
   const showD=d.published||d.isHostSide;
   const title=showD&&d.title?d.title:'Cena de '+monthLabel(d.month);
   const when=showD&&d.date?shortDate(d.date)+' · ':'';
-  return '<div class="card tap" data-act="open" data-id="'+esc(d.id)+'"><div class="row"><div class="av" style="--c:'+hcol(d.hostId)+'">'+esc(hinit(d.hostId))+'</div><div class="col" style="flex:1"><div class="t">'+esc(title)+'</div><div class="sub">'+esc(when)+esc(host?host.name:'?')+'</div></div></div><div style="margin-top:10px">'+statusChip(d,m)+'</div></div>';
+  return '<div class="card tap" data-act="open" data-id="'+esc(d.id)+'"><div class="row"><div class="av" style="--c:'+hcol(d.hostId)+'">'+esc(hinit(d.hostId))+'</div><div class="col" style="flex:1"><div class="t">'+esc(title)+'</div><div class="sub">'+esc(when)+esc(host?host.name:'?')+'</div></div></div><div style="margin-top:10px">'+statusChip(d,m)+(Object.keys(d.gallery||{}).length?' '+chip(Object.keys(d.gallery).length+(Object.keys(d.gallery).length===1?' foto':' fotos'),'blue'):'')+'</div></div>';
 }
 function renderHome(){
   const m=me();const t=todayStr();
@@ -484,6 +533,7 @@ function renderDetail(){
     if(d.notice)h+='<div class="notice">'+esc(d.notice)+'</div>';
     h+='</div>';
   }
+  h+=galleryCard(d);
   if(d.published){
     h+='<div class="card"><div class="label">Asistencia</div>';
     if(!isHost&&!d.revealed){
@@ -658,7 +708,11 @@ document.addEventListener('click',async e=>{
     else if(a==='pickavatar'){const i=document.getElementById(el.dataset.m==='cam'?'avatar-cam':'avatar-gal');if(i)i.click()}
     else if(a==='pickphoto'){S.photoTarget=S.view?S.view.id:null;const i=document.getElementById('photo-in');if(i)i.click()}
     else if(a==='rmphoto'){await api('POST','/photo',{dinnerId:el.dataset.id,remove:true});delete S.photos[el.dataset.id];toast('Foto quitada');await refresh();render()}
-    else if(a==='zoom'){const ph=S.photos[S.view.id];if(ph){S.lightbox=ph.dataUrl;render()}}
+    else if(a==='zoom'){const ph=S.photos[S.view.id];if(ph){S.lightbox={src:ph.dataUrl,label:'Invitación'};render()}}
+    else if(a==='galadd'){S.galTarget={dinnerId:el.dataset.id,slot:el.dataset.slot};const i=document.getElementById('gal-in');if(i)i.click()}
+    else if(a==='galview'){const d=byId(el.dataset.id);const k=el.dataset.slot;const src=galSrc(d,k);if(src){S.lightbox={src,label:(SLOTS.find(x=>x.k===k)||{}).t,dinnerId:d.id,slot:k,can:d.isHostSide};render()}}
+    else if(a==='galswap'){const lb=S.lightbox;S.galTarget={dinnerId:lb.dinnerId,slot:lb.slot};S.lightbox=null;render();const i=document.getElementById('gal-in');if(i)i.click()}
+    else if(a==='galdel'){const lb=S.lightbox;await api('POST','/gallery',{dinnerId:lb.dinnerId,slot:lb.slot,remove:true});delete S.gallery[galKey(lb.dinnerId,lb.slot)];S.lightbox=null;toast('Foto quitada');await refresh();render()}
     else if(a==='closezoom'){S.lightbox=null;render()}
     else if(a==='goadmin')go('admin');
     else if(a==='retry'){S.fatal=null;S.loaded=false;render();refresh()}
@@ -685,7 +739,7 @@ document.addEventListener('click',async e=>{
     else if(a==='saveprofile'){await api('POST','/profile',{name:val('p-name'),phone:val('p-phone')});toast('Perfil actualizado');await refresh();render()}
     else if(a==='togglepw'){S.pwOpen=!S.pwOpen;render()}
     else if(a==='savepw'){await api('POST','/password',{current:document.getElementById('pw-cur').value,next:document.getElementById('pw-new').value});S.pwOpen=false;toast('Contraseña actualizada');render()}
-    else if(a==='open'){S.view={id:el.dataset.id};S.confirm=null;render();window.scrollTo(0,0);loadPhotoFor(el.dataset.id)}
+    else if(a==='open'){S.view={id:el.dataset.id};S.confirm=null;render();window.scrollTo(0,0);loadPhotoFor(el.dataset.id);loadGallery(el.dataset.id)}
     else if(a==='back'){S.view=null;S.confirm=null;render();window.scrollTo(0,0)}
     else if(a==='newdinner'){S.form={};render();window.scrollTo(0,0)}
     else if(a==='editdinner'){const d=byId(el.dataset.id);S.form=Object.assign({},d);render();window.scrollTo(0,0)}
@@ -751,6 +805,7 @@ document.addEventListener('click',async e=>{
 
 // Los selectores de archivo viven fuera de la pantalla que se redibuja, así la foto no se pierde
 ['avatar-cam','avatar-gal'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)onAvatarPicked(f)}));
+document.getElementById('gal-in').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';const t=S.galTarget;if(f&&t)onGalleryPicked(f,t)});
 document.getElementById('photo-in').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';const id=S.photoTarget||(S.view&&S.view.id);if(f&&id)onPhotoPicked(f,id)});
 
 let pendingRender=false;

@@ -169,6 +169,23 @@ assert.equal((await call("POST", "/photo", { who: "valentina", body: { dinnerId:
 assert.equal((await call("GET", "/photo/" + id1, { who: "elisa" })).status, 404, "foto quitada");
 await call("POST", "/photo", { who: "valentina", body: { dinnerId: id1, dataUrl: tinyJpg } });
 
+// ---- Galería de la cena ----
+const gp = (who, slot, extra = {}) => call("POST", "/gallery", { who, body: { dinnerId: id1, slot, dataUrl: tinyJpg, ...extra } });
+assert.equal((await gp("elisa", "entrada")).status, 403, "solo hosts suben fotos de la cena");
+assert.equal((await gp("valentina", "cocina")).status, 400, "slot inválido");
+assert.equal((await gp("valentina", "entrada", { dataUrl: "data:text/html;base64,PGI+" })).status, 400, "solo imágenes");
+assert.equal((await gp("valentina", "entrada", { dataUrl: "data:image/jpeg;base64," + "A".repeat(500000) })).status, 413);
+assert.equal((await call("POST", "/gallery", { who: "ian", body: { dinnerId: idX, slot: "postre", dataUrl: tinyJpg } })).status, 409, "no se sube a una carta sin publicar");
+for (const slot of ["decoracion", "ambiente", "entrada", "principal", "postre"]) assert.equal((await gp("juanjo", slot)).status, 200, "host sube " + slot + " incluso con la cena revelada");
+let gst = (await state("elisa")).dinners.find((x) => x.id === id1);
+assert.deepEqual(Object.keys(gst.gallery).sort(), ["ambiente", "decoracion", "entrada", "postre", "principal"], "los invitados ven qué fotos hay");
+const gf = await call("POST", "/gallery/fetch", { who: "elisa", body: { dinnerId: id1, slots: ["postre", "decoracion", "nada"] } });
+assert.equal(Object.keys(gf.body.photos).length, 2); assert.equal(gf.body.photos.postre.dataUrl, tinyJpg);
+assert.equal((await call("POST", "/gallery", { who: "elisa", body: { dinnerId: id1, slot: "postre", remove: true } })).status, 403);
+assert.equal((await gp("valentina", "postre", { remove: true })).status, 200);
+assert.equal(Object.keys((await state("elisa")).dinners.find((x) => x.id === id1).gallery).length, 4, "quitar una foto");
+assert.equal((await call("POST", "/gallery/fetch", { who: "elisa", body: { dinnerId: id1, slots: ["postre"] } })).body.photos.postre, undefined);
+
 // ---- Cena 2: host h3 (Elisa), votación abre sola por fecha, gana más nota -> movimiento ----
 await new Promise((r) => setTimeout(r, 5));
 const id2 = (await call("POST", "/dinner", { who: "elisa", body: { month: "2026-12", hostId: "h3", title: "Sushi night", date: "2026-12-05", dishes: ["Rolls"] } })).body.id;
@@ -194,5 +211,5 @@ assert.equal((await reg(PEOPLE.find((p) => p.id === "paul"), { email: "paul@mail
 await call("POST", "/admin", { who: "ian", body: { adminCode: "adm", action: "deleteDinner", dinnerId: id1 } });
 st = await state("ian");
 assert.ok(!st.dinners.some((x) => x.id === id1));
-assert.ok(![...mem.keys()].some((k) => k === `payconf/${id1}` || k === `photos/${id1}`));
+assert.ok(![...mem.keys()].some((k) => k === `payconf/${id1}` || k === `photos/${id1}` || k.startsWith(`gallery/${id1}/`)));
 console.log("OK: todas las pruebas pasaron");

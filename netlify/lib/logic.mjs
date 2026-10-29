@@ -161,6 +161,7 @@ const cleanPhone = (v) => String(v || "").replace(/[^\d+]/g, "");
 const validPhone = (v) => { const d = cleanPhone(v).replace(/\D/g, ""); return d.length >= 8 && d.length <= 15; };
 const AVATAR_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const AVATAR_MAX = 90000;
+export const GALLERY_SLOTS = ["decoracion", "ambiente", "entrada", "principal", "postre"];
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 45;
 
 export async function handle({ method, path, headers, body, store, env }) {
@@ -244,7 +245,7 @@ export async function handle({ method, path, headers, body, store, env }) {
       const out = {
         id, month: d.month, hostId: d.hostId, createdBy: d.createdBy || null,
         published: !!d.published, votingOpen: c.votingOpen, revealed: c.revealed, revealedAt,
-        title: "", date: "", time: "", place: "", dishes: [], dressCode: "", bring: "", notice: "", payInfo: "", photoAt: 0,
+        title: "", date: "", time: "", place: "", dishes: [], dressCode: "", bring: "", notice: "", payInfo: "", photoAt: 0, gallery: {},
         attendees: [], declined: [], noReply: [], pending: [],
         myRsvp: mineR ? mineR.status : null, myPay: "none", iVoted: me ? c.voted.some((p) => p.id === me.id) : false,
         isHostSide: hostSide,
@@ -252,7 +253,7 @@ export async function handle({ method, path, headers, body, store, env }) {
       if (details) {
         Object.assign(out, {
           title: d.title || "", date: d.date || "", time: d.time || "", place: d.place || "",
-          dishes: d.dishes || [], dressCode: d.dressCode || "", bring: d.bring || "", notice: d.notice || "", payInfo: d.payInfo || "", photoAt: d.photoAt || 0,
+          dishes: d.dishes || [], dressCode: d.dressCode || "", bring: d.bring || "", notice: d.notice || "", payInfo: d.payInfo || "", photoAt: d.photoAt || 0, gallery: d.gallery || {},
         });
       }
       if (d.published || hostSide) {
@@ -372,6 +373,42 @@ export async function handle({ method, path, headers, body, store, env }) {
     return ok({ ok: true, at });
   }
 
+  // ---------- Galería de la cena (5 fotos fijas) ----------
+  if (path === "/gallery") {
+    const id = body && body.dinnerId;
+    const slot = body && body.slot;
+    const d = await store.get(`dinners/${id}`);
+    if (!d) return fail(404, "not_found", "Cena no encontrada.");
+    if (!isHostSide(d)) return fail(403, "forbidden", "Solo los anfitriones pueden subir fotos de la cena.");
+    if (!GALLERY_SLOTS.includes(slot)) return fail(400, "bad_slot", "Tipo de foto no válido.");
+    if (!d.published) return fail(409, "not_published", "Publica la carta antes de subir fotos.");
+    const gallery = { ...(d.gallery || {}) };
+    if (body.remove) {
+      await store.delete(`gallery/${id}/${slot}`);
+      delete gallery[slot];
+      await store.set(`dinners/${id}`, { ...d, gallery });
+      return ok({ ok: true });
+    }
+    const url = String(body.dataUrl || "");
+    if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) return fail(400, "bad_photo", "Formato de imagen no válido.");
+    if (url.length > 480000) return fail(413, "photo_too_big", "La foto es muy pesada.");
+    const at = Date.now();
+    await store.set(`gallery/${id}/${slot}`, { dataUrl: url, at, by: me.id });
+    gallery[slot] = at;
+    await store.set(`dinners/${id}`, { ...d, gallery });
+    return ok({ ok: true, at });
+  }
+  if (path === "/gallery/fetch") {
+    const id = body && body.dinnerId;
+    const d = await store.get(`dinners/${id}`);
+    if (!d || !(d.published || isHostSide(d))) return fail(404, "not_found", "Fotos no disponibles.");
+    const slots = (Array.isArray(body.slots) ? body.slots : []).filter((x) => GALLERY_SLOTS.includes(x));
+    const docs = await Promise.all(slots.map((x) => store.get(`gallery/${id}/${x}`)));
+    const photos = {};
+    slots.forEach((x, k) => { if (docs[k]) photos[x] = { at: docs[k].at, dataUrl: docs[k].dataUrl }; });
+    return ok({ photos });
+  }
+
   if (path === "/publish") {
     const e = needMe(); if (e) return e;
     const d = await store.get(`dinners/${body && body.dinnerId}`);
@@ -478,6 +515,7 @@ export async function handle({ method, path, headers, body, store, env }) {
       await store.delete(`dinners/${id}`);
       await store.delete(`payconf/${id}`);
       await store.delete(`photos/${id}`);
+      for (const slot of GALLERY_SLOTS) await store.delete(`gallery/${id}/${slot}`);
       for (const prefix of ["votes/", "rsvp/"]) {
         const all = await loadAll(store, prefix);
         for (const [pId, doc] of Object.entries(all)) {
