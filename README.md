@@ -1,6 +1,6 @@
 # 🍽️ Cena de Primos
 
-App para la cena mensual de primos: cada pareja anfitriona arma y publica su carta, los invitados confirman asistencia, se cobra la cuota de $10.000 por persona y, después de la cena, todos votan. El ranking se publica cuando vota el último asistente y se actualiza cena a cena.
+App para la cena mensual de primos: cada pareja anfitriona arma y publica su carta, los invitados confirman asistencia, se cobra la cuota de $10.000 por persona y, después de la cena, todos votan. El **ranking final** no es en vivo: se publica una sola vez, cuando todas las parejas fueron anfitrionas y todos votaron todas las cenas (el admin también puede publicarlo antes).
 
 ## Cómo funciona una cena
 1. **Host crea la carta** (borrador): nombre del evento, fecha y hora, lugar, platos, requisitos (disfraz, qué traer, mensaje sorpresa) y datos de pago. Solo los anfitriones la ven hasta que pulsan **Publicar**.
@@ -8,7 +8,7 @@ App para la cena mensual de primos: cada pareja anfitriona arma y publica su car
 3. **Foto de la invitación:** el host sube una foto o imagen de su invitación (se comprime sola en el celular) y los invitados la ven, con zoom, cuando publica la carta.
 4. **Cuota $10.000 por invitado** (se paga al host): el invitado avisa «Ya pagué» y el host marca «Recibido». Cada host ve el total recibido vs. esperado; los demás solo ven su propio estado.
 5. **Después de la cena** el host abre la votación (o se abre sola al día siguiente de la fecha). Votan solo quienes asistieron; el host no vota su propia cena. Notas 1,0–7,0 en 5 criterios + mensaje opcional.
-6. **Revelado**: cuando vota el último asistente se publican los resultados de la cena y se actualiza el **ranking en vivo** (con flechas ▲▼ de movimiento y aviso en la pestaña Ranking).
+6. **Revelado:** cuando vota el último asistente se publican los resultados de esa cena. El **ranking final** no es en vivo: se publica una sola vez, cuando todas las parejas fueron anfitrionas y todos votaron todas las cenas (el admin también puede publicarlo antes).
 
 Los resultados y votos **no salen del servidor** hasta el revelado.
 

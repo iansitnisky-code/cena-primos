@@ -148,7 +148,7 @@ assert.equal(d.revealed, false);
 assert.equal(d.results, undefined);
 assert.deepEqual(d.pending, ["ines"]);
 assert.ok(!JSON.stringify(st).includes("hola de kiki"));
-assert.equal(st.season.length, 0);
+assert.deepEqual(st.season.ranking, []); assert.equal(st.season.complete, false);
 
 // Último voto -> revelado, y los que dijeron NO no cuentan
 await vote("ines", id1, 4, { msg: "anónimo" });
@@ -158,9 +158,9 @@ assert.equal(d.revealed, true);
 assert.equal(d.results.n, yes.length);
 assert.equal(d.results.messages.find((m) => m.msg === "anónimo").name, null);
 assert.equal(d.results.messages.find((m) => m.msg === "hola de elisa").name, "Elisa Apellido");
-assert.equal(st.season[0].hostId, "h1");
-assert.equal(st.season[0].delta, null, "primera cena: sin movimiento");
-assert.equal(st.lastRevealed.id, id1);
+assert.deepEqual(st.season.ranking, [], "el ranking NO es en vivo: sigue oculto tras revelar la primera cena");
+assert.equal(st.season.hosted, 1); assert.equal(st.season.total, 7); assert.equal(st.season.complete, false);
+assert.equal(st.lastRevealed, undefined, "ya no hay aviso de ranking en vivo");
 assert.equal((await vote("elisa", id1, 1)).status, 409);
 assert.equal((await call("POST", "/rsvp", { who: "elisa", body: { dinnerId: id1, status: "no" } })).status, 409);
 
@@ -186,6 +186,29 @@ assert.equal((await gp("valentina", "postre", { remove: true })).status, 200);
 assert.equal(Object.keys((await state("elisa")).dinners.find((x) => x.id === id1).gallery).length, 4, "quitar una foto");
 assert.equal((await call("POST", "/gallery/fetch", { who: "elisa", body: { dinnerId: id1, slots: ["postre"] } })).body.photos.postre, undefined);
 
+// ---- Banner de la app ----
+assert.deepEqual((await state("elisa")).banner, [], "banner vacío al inicio");
+assert.equal((await call("POST", "/banner", { body: { dataUrl: tinyJpg } })).status, 401, "banner exige sesión");
+assert.equal((await call("POST", "/banner", { who: "elisa", body: { dataUrl: "data:text/html;base64,PGI+" } })).status, 400);
+assert.equal((await call("POST", "/banner", { who: "elisa", body: { dataUrl: "data:image/jpeg;base64," + "A".repeat(500000) } })).status, 413);
+const b1 = await call("POST", "/banner", { who: "elisa", body: { dataUrl: tinyJpg } });
+assert.equal(b1.status, 200);
+const b2 = await call("POST", "/banner", { who: "ian", body: { dataUrl: tinyJpg + "AAAA" } });
+let bst = (await state("cami")).banner;
+assert.deepEqual(bst.map((x) => x.by), ["elisa", "ian"], "todos pueden sumar y se ordena por llegada");
+assert.ok(!JSON.stringify(bst).includes("/9j/"), "el estado no incluye imágenes");
+const bf = await call("POST", "/banner/fetch", { who: "cami", body: { ids: [b1.body.id, b2.body.id, "nada"] } });
+assert.equal(Object.keys(bf.body.photos).length, 2); assert.equal(bf.body.photos[b1.body.id].dataUrl, tinyJpg);
+assert.equal((await call("POST", "/banner/remove", { who: "ian", body: { id: b1.body.id } })).status, 403, "no puedes quitar la foto de otro");
+assert.equal((await call("POST", "/banner/remove", { who: "elisa", body: { id: b1.body.id } })).status, 200, "sí la propia");
+assert.equal((await state("cami")).banner.length, 1);
+assert.equal((await call("POST", "/admin", { who: "cami", body: { adminCode: "adm", action: "removeBanner", id: b2.body.id } })).status, 200, "el admin quita cualquiera");
+assert.equal((await state("cami")).banner.length, 0);
+assert.ok(![...mem.keys()].some((k) => k.startsWith("banner/")), "se borran los blobs");
+for (let i = 0; i < 40; i++) assert.equal((await call("POST", "/banner", { who: "kiki", body: { dataUrl: tinyJpg } })).status, 200);
+assert.equal((await call("POST", "/banner", { who: "kiki", body: { dataUrl: tinyJpg } })).status, 409, "tope de 40 fotos");
+for (const x of (await state("kiki")).banner) await call("POST", "/banner/remove", { who: "kiki", body: { id: x.id } });
+
 // ---- Cena 2: host h3 (Elisa), votación abre sola por fecha, gana más nota -> movimiento ----
 await new Promise((r) => setTimeout(r, 5));
 const id2 = (await call("POST", "/dinner", { who: "elisa", body: { month: "2026-12", hostId: "h3", title: "Sushi night", date: "2026-12-05", dishes: ["Rolls"] } })).body.id;
@@ -196,10 +219,18 @@ assert.equal((await vote("kiki", id2, 7)).status, 409, "antes de la fecha");
 env.TODAY = "2026-12-06"; // pasó la fecha: se abre sola
 await vote("kiki", id2, 7); await vote("cami", id2, 7);
 st = await state("kiki");
-assert.deepEqual(st.season.map((x) => x.hostId), ["h3", "h1"]);
-assert.equal(st.season[0].delta, null, "entra nuevo");
-assert.equal(st.season[1].delta, -1, "h1 baja una posición");
-assert.equal(st.lastRevealed.id, id2);
+assert.deepEqual(st.season.ranking, [], "con 2 de 7 cenas el ranking sigue oculto");
+assert.equal(st.season.hosted, 2);
+
+// ---- Ranking final ----
+assert.equal((await call("POST", "/admin", { who: "cami", body: { adminCode: "x", action: "closeSeason" } })).status, 403);
+await call("POST", "/admin", { who: "cami", body: { adminCode: "adm", action: "closeSeason" } });
+st = await state("kiki");
+assert.equal(st.season.complete, true);
+assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1"], "ponderado final: h3 (6,6) por sobre h1 (6,0)");
+assert.ok(st.season.ranking.every((x) => !("delta" in x)), "sin movimientos");
+await call("POST", "/admin", { who: "cami", body: { adminCode: "adm", action: "reopenSeason" } });
+assert.deepEqual((await state("kiki")).season.ranking, [], "reabrir vuelve a ocultarlo");
 
 // ---- Admin ----
 assert.equal((await call("POST", "/admin", { who: "ian", body: { adminCode: "x", action: "reveal", dinnerId: idX } })).status, 403);
@@ -208,6 +239,17 @@ assert.equal((await state("ian")).dinners.find((x) => x.id === idX).revealed, tr
 await call("POST", "/admin", { who: "ian", body: { adminCode: "adm", action: "releasePerson", personId: "paul" } });
 assert.equal((await call("GET", "/state", { who: "paul" })).status, 401, "token viejo invalidado");
 assert.equal((await reg(PEOPLE.find((p) => p.id === "paul"), { email: "paul@mail.cl" })).status, 200, "puede volver a registrarse");
+// ---- El ranking final se publica solo cuando las 7 parejas ya fueron anfitrionas y todo está votado ----
+assert.equal((await state("ian")).season.complete, false);
+for (const [who, h] of [["florencia", "h2"], ["kiki", "h4"], ["cami", "h5"], ["belen", "h6"]]) {
+  const did = (await call("POST", "/dinner", { who, body: { month: "2026-12", hostId: h, title: "T " + h, date: "2026-12-01", dishes: ["x"] } })).body.id;
+  await call("POST", "/publish", { who, body: { dinnerId: did } });
+  if (h !== "h6") assert.equal((await state("ian")).season.complete, false, "falta al menos una pareja");
+  await call("POST", "/admin", { who: "ian", body: { adminCode: "adm", action: "reveal", dinnerId: did } });
+}
+st = await state("ian");
+assert.equal(st.season.hosted, 7); assert.equal(st.season.complete, true, "temporada completa");
+assert.deepEqual(st.season.ranking.map((x) => x.hostId), ["h3", "h1"]);
 await call("POST", "/admin", { who: "ian", body: { adminCode: "adm", action: "deleteDinner", dinnerId: id1 } });
 st = await state("ian");
 assert.ok(!st.dinners.some((x) => x.id === id1));

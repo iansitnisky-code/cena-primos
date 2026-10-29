@@ -101,19 +101,15 @@ function seasonFrom(list) {
     .sort((a, b) => b.overall - a.overall);
 }
 
-/** Ranking actual + movimiento respecto al ranking antes de la última cena revelada. */
-function seasonWithMovement(dinnersOut) {
-  const revs = dinnersOut.filter((d) => d.revealed && d.results && d.results.overall != null);
-  const cur = seasonFrom(revs);
-  let last = null;
-  revs.forEach((d) => { if (!last || (d.revealedAt || 0) > (last.revealedAt || 0)) last = d; });
-  const prev = last ? seasonFrom(revs.filter((d) => d !== last)) : [];
-  const pos = new Map(prev.map((x, i) => [x.hostId, i]));
-  const ranking = cur.map((x, i) => ({ ...x, delta: pos.has(x.hostId) ? pos.get(x.hostId) - i : null }));
-  return {
-    ranking,
-    lastRevealed: last ? { id: last.id, hostId: last.hostId, month: last.month, title: last.title || "", at: last.revealedAt || 0 } : null,
-  };
+/** Ranking FINAL de la temporada: solo se entrega cuando todas las parejas fueron anfitrionas y
+ *  todas las cenas publicadas tienen sus votos completos (o el admin cierra la temporada). */
+function seasonSummary(dinnersOut, closed) {
+  const revealed = dinnersOut.filter((d) => d.revealed);
+  const hosted = HOUSEHOLDS.filter((h) => revealed.some((d) => d.hostId === h.id));
+  const allPublishedRevealed = dinnersOut.filter((d) => d.published).every((d) => d.revealed);
+  const complete = !!closed || (hosted.length === HOUSEHOLDS.length && allPublishedRevealed);
+  const ranking = complete ? seasonFrom(revealed.filter((d) => d.results && d.results.overall != null)) : [];
+  return { complete, closed: !!closed, hosted: hosted.length, hostedIds: hosted.map((h) => h.id), total: HOUSEHOLDS.length, revealed: revealed.length, ranking };
 }
 
 const str = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
@@ -161,6 +157,8 @@ const cleanPhone = (v) => String(v || "").replace(/[^\d+]/g, "");
 const validPhone = (v) => { const d = cleanPhone(v).replace(/\D/g, ""); return d.length >= 8 && d.length <= 15; };
 const AVATAR_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const AVATAR_MAX = 90000;
+const BANNER_MAX = 40;
+const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 export const GALLERY_SLOTS = ["decoracion", "ambiente", "entrada", "principal", "postre"];
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 45;
 
@@ -229,7 +227,7 @@ export async function handle({ method, path, headers, body, store, env }) {
 
   // ---------- GET /state ----------
   if (method === "GET" && path === "/state") {
-    const [dinnerMap, ctx] = await Promise.all([loadAll(store, "dinners/"), loadCtx(store, env)]);
+    const [dinnerMap, ctx, bannerIdx, seasonMeta] = await Promise.all([loadAll(store, "dinners/"), loadCtx(store, env), store.get("meta/banner"), store.get("meta/season")]);
     const dinners = [];
     for (const [id, d0] of Object.entries(dinnerMap)) {
       const d = { ...d0, id };
@@ -281,12 +279,12 @@ export async function handle({ method, path, headers, body, store, env }) {
       dinners.push(out);
     }
     dinners.sort((a, b) => (b.month || "").localeCompare(a.month || ""));
-    const { ranking, lastRevealed } = seasonWithMovement(dinners);
+    const season = seasonSummary(dinners, seasonMeta && seasonMeta.closed);
     return ok({
-      households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt,
+      households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt, banner: bannerIdx || [],
       me: me.id, profile: { name: ctx.names[me.id], phone: ctx.phones[me.id], email: ctx.accounts[me.id].email },
       mine: ctx.votes[me.id] || {},
-      dinners, season: ranking, lastRevealed,
+      dinners, season,
     });
   }
 
@@ -371,6 +369,41 @@ export async function handle({ method, path, headers, body, store, env }) {
     await store.set(`photos/${id}`, { dataUrl: url, by: me.id, at });
     await store.set(`dinners/${id}`, { ...d, photoAt: at });
     return ok({ ok: true, at });
+  }
+
+  // ---------- Banner de la app (fotos de todos, se desliza) ----------
+  if (path === "/banner") {
+    const url = String((body && body.dataUrl) || "");
+    if (!PHOTO_RE.test(url)) return fail(400, "bad_photo", "Formato de imagen no válido.");
+    if (url.length > 480000) return fail(413, "photo_too_big", "La foto es muy pesada.");
+    const idx = (await store.get("meta/banner")) || [];
+    if (idx.length >= BANNER_MAX) return fail(409, "banner_full", `El banner ya tiene ${BANNER_MAX} fotos. Pide al admin que quite alguna.`);
+    const id = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const at = Date.now();
+    await store.set(`banner/${id}`, { dataUrl: url, at, by: me.id });
+    const fresh = (await store.get("meta/banner")) || [];
+    fresh.push({ id, at, by: me.id });
+    await store.set("meta/banner", fresh);
+    return ok({ ok: true, id, at });
+  }
+  if (path === "/banner/remove") {
+    const id = body && body.id;
+    const idx = (await store.get("meta/banner")) || [];
+    const item = idx.find((x) => x.id === id);
+    if (!item) return fail(404, "not_found", "Esa foto ya no existe.");
+    if (item.by !== me.id) return fail(403, "forbidden", "Solo quien subió la foto puede quitarla.");
+    await store.delete(`banner/${id}`);
+    await store.set("meta/banner", idx.filter((x) => x.id !== id));
+    return ok({ ok: true });
+  }
+  if (path === "/banner/fetch") {
+    const idx = (await store.get("meta/banner")) || [];
+    const known = new Set(idx.map((x) => x.id));
+    const ids = (Array.isArray(body && body.ids) ? body.ids : []).filter((i) => known.has(i)).slice(0, 10);
+    const docs = await Promise.all(ids.map((i) => store.get(`banner/${i}`)));
+    const photos = {};
+    ids.forEach((i, k) => { if (docs[k]) photos[i] = { at: docs[k].at, by: docs[k].by, dataUrl: docs[k].dataUrl }; });
+    return ok({ photos });
   }
 
   // ---------- Galería de la cena (5 fotos fijas) ----------
@@ -522,6 +555,17 @@ export async function handle({ method, path, headers, body, store, env }) {
           if (doc[id]) { delete doc[id]; await store.set(`${prefix}${pId}`, doc); }
         }
       }
+      return ok({ ok: true });
+    }
+    if (action === "closeSeason" || action === "reopenSeason") {
+      await store.set("meta/season", { closed: action === "closeSeason", at: Date.now() });
+      return ok({ ok: true });
+    }
+    if (action === "removeBanner") {
+      const idx = (await store.get("meta/banner")) || [];
+      if (!idx.some((x) => x.id === body.id)) return fail(404, "not_found", "Esa foto ya no existe.");
+      await store.delete(`banner/${body.id}`);
+      await store.set("meta/banner", idx.filter((x) => x.id !== body.id));
       return ok({ ok: true });
     }
     if (action === "releasePerson") {
