@@ -171,6 +171,9 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+<input type="file" id="avatar-cam" accept="image/*" capture="user" hidden>
+<input type="file" id="avatar-gal" accept="image/*" hidden>
+<input type="file" id="photo-in" accept="image/*" hidden>
 <noscript>Esta app necesita JavaScript.</noscript>
 <script>
 const CRITERIA=[
@@ -323,7 +326,7 @@ async function onPhotoPicked(file,dinnerId){
 }
 function photoCard(d){
   const can=d.isHostSide&&!d.revealed;
-  const input='<input type="file" id="photo-in" accept="image/*" hidden>';
+  const input='';
   if(d.photoAt){
     const ph=S.photos[d.id];
     const img=ph&&ph.at===d.photoAt?'<img class="invite" src="'+ph.dataUrl+'" alt="Invitación de la cena" data-act="zoom">':'<div class="invite skel">Cargando invitación…</div>';
@@ -390,9 +393,9 @@ function renderAuth(){
     body+='<div class="center" style="margin-top:16px"><button class="link" data-act="gotologin">Ya tengo cuenta</button></div>';
   }else{
     title='Tus datos';sub='Así te verán los demás';
-    body='<div class="center" style="margin-bottom:16px"><button class="avpick" type="button" data-act="pickavatar">'+(a.avatar?'<img src="'+a.avatar+'" alt="Tu foto">':'<span>📷<br>Sube tu foto</span>')+'</button><div class="sub">'+(a.avatar?'Toca para cambiarla':'La foto es obligatoria')+'</div><input type="file" id="avatar-in" accept="image/*" hidden></div><p class="sub" style="margin:0 0 16px">Tu teléfono solo lo ven los anfitriones de las cenas a las que vayas.</p>'+err+inp('name','Nombre y apellido','text','Ej: Ian Sitnisky','autocomplete="name"')+inp('phone','Teléfono','tel','+56 9 1234 5678','autocomplete="tel"')+inp('email','Correo','email','tu@correo.com','autocomplete="email" autocapitalize="none"')+inp('password','Contraseña','password','Mínimo 8 caracteres','autocomplete="new-password"')+'<button class="btn block" data-act="register"'+(a.busy?' disabled':'')+'>Crear cuenta</button><div class="center" style="margin-top:14px"><button class="link" data-act="regback">Volver</button></div>';
+    body='<div class="center" style="margin-bottom:16px"><div class="avpick">'+(a.avatar?'<img src="'+a.avatar+'" alt="Tu foto">':'<span>📷<br>Tu foto</span>')+'</div><div class="row" style="justify-content:center;gap:8px;margin-top:4px"><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="cam">Tomar foto</button><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="gal">Galería</button></div><div class="sub" style="margin-top:8px">'+(a.avatar?'Listo, puedes cambiarla':'La foto es obligatoria')+'</div></div><p class="sub" style="margin:0 0 16px">Tu teléfono solo lo ven los anfitriones de las cenas a las que vayas.</p>'+err+inp('name','Nombre y apellido','text','Ej: Ian Sitnisky','autocomplete="name"')+inp('phone','Teléfono','tel','+56 9 1234 5678','autocomplete="tel"')+inp('email','Correo','email','tu@correo.com','autocomplete="email" autocapitalize="none"')+inp('password','Contraseña','password','Mínimo 8 caracteres','autocomplete="new-password"')+'<button class="btn block" data-act="register"'+(a.busy?' disabled':'')+'>Crear cuenta</button><div class="center" style="margin-top:14px"><button class="link" data-act="regback">Volver</button></div>';
   }
-  return '<div class="ahero" style="--c:'+col+'"><img class="photo" src="/inicio.jpg" alt="Los primos disfrazados"><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div><div class="sheet"><div class="card">'+body+'</div></div>';
+  return '<div class="ahero" style="--c:'+col+'">'+ILL+'<h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div><div class="sheet"><div class="card">'+body+'</div></div>';
 }
 
 /* ---------- vistas ---------- */
@@ -597,7 +600,7 @@ function renderRanking(){
 function renderProfile(){
   const p=S.profile;
   let h=hero('#6B5CE7','<div class="row" style="justify-content:flex-start;gap:16px">'+(avatarSrc(S.me)?'<img class="ava" style="width:72px;height:72px;border:3px solid #fff" src="'+avatarSrc(S.me)+'" alt="Tu foto">':'<div class="av lg" style="--c:#6B5CE7">'+esc(initials(p.name))+'</div>')+'<div class="col"><h1 style="font-size:24px">'+esc(p.name)+'</h1><div class="sub">'+esc(p.email)+'</div></div></div>')+'<main>';
-  h+='<div class="card center"><div class="sub" style="margin-bottom:10px">'+(avatarSrc(S.me)?'Tu foto de perfil':'Aún no tienes foto de perfil')+'</div><button class="btn '+(avatarSrc(S.me)?'ghost':'orange')+' sm" data-act="pickavatar">'+(avatarSrc(S.me)?'Cambiar foto':'Subir mi foto')+'</button><input type="file" id="avatar-in" accept="image/*" hidden></div>';
+  h+='<div class="card center"><div class="sub" style="margin-bottom:10px">'+(avatarSrc(S.me)?'Tu foto de perfil':'Aún no tienes foto de perfil')+'</div><div class="row" style="justify-content:center;gap:10px"><button class="btn '+(avatarSrc(S.me)?'ghost':'orange')+' sm" data-act="pickavatar" data-m="cam">Tomar foto</button><button class="btn ghost sm" data-act="pickavatar" data-m="gal">Elegir de la galería</button></div></div>';
   h+='<div class="card"><div class="field"><label class="label">Nombre y apellido</label><input type="text" id="p-name" maxlength="60" value="'+esc(p.name)+'"></div><div class="field"><label class="label">Teléfono</label><input type="tel" id="p-phone" value="'+esc(p.phone)+'"></div><div class="field"><label class="label">Correo</label><input type="email" value="'+esc(p.email)+'" disabled style="opacity:.55"></div><button class="btn block" data-act="saveprofile">Guardar cambios</button></div>';
   if(S.pwOpen)h+='<div class="card"><div class="field"><label class="label">Contraseña actual</label><input type="password" id="pw-cur" autocomplete="current-password"></div><div class="field"><label class="label">Nueva contraseña</label><input type="password" id="pw-new" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></div><div class="row" style="justify-content:flex-start"><button class="btn sm" data-act="savepw">Cambiar</button><button class="btn ghost sm" data-act="togglepw">Cancelar</button></div></div>';
   else h+='<button class="btn ghost block" data-act="togglepw">Cambiar contraseña</button>';
@@ -633,8 +636,6 @@ document.addEventListener('input',e=>{
   else if(t.id==='v-msg'&&S.view){const d=byId(S.view.id);if(d)getDraft(d).msg=t.value}
 });
 document.addEventListener('change',e=>{
-  if(e.target.id==='avatar-in'){const f=e.target.files&&e.target.files[0];e.target.value='';if(f)onAvatarPicked(f);return}
-  if(e.target.id==='photo-in'&&S.view){const f=e.target.files&&e.target.files[0];e.target.value='';if(f)onPhotoPicked(f,S.view.id);return}
   if(e.target.id==='v-signed'&&S.view){const d=byId(S.view.id);if(d)getDraft(d).signed=e.target.checked}
 });
 document.addEventListener('keydown',e=>{
@@ -654,8 +655,8 @@ document.addEventListener('click',async e=>{
   const a=el.dataset.act;
   try{
     if(a==='tab')go(el.dataset.t);
-    else if(a==='pickavatar'){const i=document.getElementById('avatar-in');if(i)i.click()}
-    else if(a==='pickphoto'){const i=document.getElementById('photo-in');if(i)i.click()}
+    else if(a==='pickavatar'){const i=document.getElementById(el.dataset.m==='cam'?'avatar-cam':'avatar-gal');if(i)i.click()}
+    else if(a==='pickphoto'){S.photoTarget=S.view?S.view.id:null;const i=document.getElementById('photo-in');if(i)i.click()}
     else if(a==='rmphoto'){await api('POST','/photo',{dinnerId:el.dataset.id,remove:true});delete S.photos[el.dataset.id];toast('Foto quitada');await refresh();render()}
     else if(a==='zoom'){const ph=S.photos[S.view.id];if(ph){S.lightbox=ph.dataUrl;render()}}
     else if(a==='closezoom'){S.lightbox=null;render()}
@@ -747,6 +748,10 @@ document.addEventListener('click',async e=>{
     if(err&&(err.error==='revealed'||err.error==='voting_closed'||err.error==='not_attendee')){await refresh();render()}
   }
 });
+
+// Los selectores de archivo viven fuera de la pantalla que se redibuja, así la foto no se pierde
+['avatar-cam','avatar-gal'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)onAvatarPicked(f)}));
+document.getElementById('photo-in').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';const id=S.photoTarget||(S.view&&S.view.id);if(f&&id)onPhotoPicked(f,id)});
 
 let pendingRender=false;
 function schedule(){
