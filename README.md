@@ -1,16 +1,15 @@
 # 🍽️ Cena de Primos
 
-App para la cena mensual de primos: cada pareja anfitriona arma y publica su carta, los invitados confirman asistencia, se cobra la cuota de $10.000 por persona y, después de la cena, todos votan. El **ranking** se actualiza cena a cena, pero solo con cenas completas (publicadas por el host y con los votos de todos sus asistentes).
+App para la cena mensual de primos: cada pareja anfitriona arma y publica su carta y, después de la cena, todos votan. Se usa solo para **resultados y experiencia** (sin confirmación de asistencia ni cobros).
 
 ## Cómo funciona una cena
-1. **Host crea la carta** (borrador): nombre del evento, fecha y hora, lugar, platos, requisitos (disfraz, qué traer, mensaje sorpresa) y datos de pago. Solo los anfitriones la ven hasta que pulsan **Publicar**.
-2. **Invitados confirman** con «Sí voy / No puedo». Todos ven quiénes van.
-3. **Foto de la invitación:** el host sube una foto o imagen de su invitación (se comprime sola en el celular) y los invitados la ven, con zoom, cuando publica la carta.
-4. **Cuota $10.000 por invitado** (se paga al host): el invitado avisa «Ya pagué» y el host marca «Recibido». Cada host ve el total recibido vs. esperado; los demás solo ven su propio estado.
-5. **Después de la cena** el host abre la votación (o se abre sola al día siguiente de la fecha). Votan solo quienes asistieron; el host no vota su propia cena. Notas 1,0–7,0 en 5 criterios + mensaje opcional.
-6. **Revelado y ranking:** una cena se completa cuando el host la publicó y todos sus asistentes votaron. Ahí se revelan sus resultados y el **ranking se actualiza** (con flechas ▲▼ de movimiento y aviso en la pestaña Ranking). Una cena con votos pendientes no suma. El admin puede forzar el cierre de una cena si alguien nunca vota.
+1. **Host crea la carta** (borrador): nombre del evento, fecha y hora, lugar, platos y requisitos (disfraz, qué traer, mensaje sorpresa). Solo los anfitriones la ven hasta que pulsan **Publicar**.
+2. **Fotos:** el host puede subir la foto de la invitación y, durante o después de la cena, 5 fotos fijas (decoración, ambiente y grupo, entrada, plato principal y postre). Todos las revisan en el detalle de la cena.
+3. **Votación:** después de la cena el host la abre (o se abre sola al día siguiente de la fecha). Votan todos los primos con cuenta, menos los anfitriones de esa cena. Un voto cuenta cuando eliges las 5 notas (1,0 a 7,0) y tocas **Guardar votación**; puedes cambiarlo hasta que se revele. Mensaje opcional, firmado o anónimo.
+4. **Cena completa y ranking:** una cena se completa cuando el host la publicó y **todos** votaron. Ahí se revelan sus resultados y el **ranking se actualiza** (flechas ▲▼ de movimiento y aviso en la pestaña Ranking). Una cena con votos pendientes no suma. El admin puede forzar el cierre si alguien nunca vota.
+5. **Banner de Inicio:** todos pueden sumar fotos al banner deslizable.
 
-Los resultados y votos **no salen del servidor** hasta el revelado.
+Los resultados y votos **no salen del servidor** hasta que la cena está completa.
 
 ## Cuentas
 - Cada primo crea su cuenta con **correo, contraseña, nombre y teléfono** (pasos: código familiar, elegir quién eres, tus datos).
@@ -55,6 +54,5 @@ Manda a los primos el link de Netlify (puedes cambiarlo en *Site configuration �
 
 ## Notas
 - Si algún asistente nunca vota, desde modo Admin puedes forzar el revelado.
-- La cuota ($10.000) se cambia en `FEE` de `netlify/lib/logic.mjs`.
 - Datos: se guardan en Netlify Blobs. Para empezar de cero, borra el sitio o los blobs `cena-primos` desde el panel de Netlify.
 - Pruebas del backend: `npm install && npm test`.

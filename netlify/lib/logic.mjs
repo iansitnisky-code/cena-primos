@@ -1,7 +1,6 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const CRITERIA = ["sabor", "presentacion", "ambientacion", "simpatia", "originalidad"];
-export const FEE = 10000; // CLP por invitado, se paga al host
 
 export const HOUSEHOLDS = [
   { id: "h1", name: "Valentina y Juanjo", members: [["valentina", "Valentina Nuñez Barranco"], ["juanjo", "Juanjose Sitnisky", "Juanjo"]] },
@@ -55,19 +54,16 @@ async function loadAll(store, prefix) {
   return out;
 }
 
-/** Estado calculado de una cena a partir de RSVP, votos y banderas. */
+/** Estado calculado de una cena. Votan todas las cuentas registradas que no son anfitrionas de esa cena.
+ *  Un voto cuenta cuando la persona guarda sus 5 notas. La cena se completa cuando todos votaron. */
 function calc(d, ctx) {
-  const others = PEOPLE.filter((p) => p.h !== d.hostId);
-  const rsvpOf = (p) => ctx.rsvp[p.id] && ctx.rsvp[p.id][d.id];
-  const attendees = others.filter((p) => rsvpOf(p) && rsvpOf(p).status === "yes");
-  const declined = others.filter((p) => rsvpOf(p) && rsvpOf(p).status === "no");
-  const noReply = others.filter((p) => !rsvpOf(p));
+  const voters = PEOPLE.filter((p) => p.h !== d.hostId && ctx.claimed.includes(p.id));
   const votingOpen = !!(d.votingOpen || (d.date && d.date < ctx.today));
-  const voted = attendees.filter((p) => ctx.votes[p.id] && ctx.votes[p.id][d.id]);
-  const pending = votingOpen ? attendees.filter((p) => !voted.includes(p)) : [];
-  const all = !!d.published && votingOpen && attendees.length > 0 && pending.length === 0;
+  const voted = voters.filter((p) => ctx.votes[p.id] && ctx.votes[p.id][d.id]);
+  const pending = votingOpen ? voters.filter((p) => !voted.includes(p)) : [];
+  const all = !!d.published && votingOpen && voters.length > 0 && pending.length === 0;
   const revealed = !!(d.closed || d.revealed || all);
-  return { attendees, declined, noReply, votingOpen, voted, pending, all, revealed };
+  return { voters, votingOpen, voted, pending, all, revealed };
 }
 
 function dinnerResults(d, c, votes, names) {
@@ -133,7 +129,7 @@ function validDinner(b) {
   return {
     month, hostId: b.hostId, date, time,
     title: str(b.title, 80), place: str(b.place, 100), dishes,
-    dressCode: str(b.dressCode, 120), bring: str(b.bring, 120), notice: str(b.notice, 300), payInfo: str(b.payInfo, 200),
+    dressCode: str(b.dressCode, 120), bring: str(b.bring, 120), notice: str(b.notice, 300),
   };
 }
 
@@ -149,15 +145,10 @@ function validVote(b) {
 }
 
 async function loadCtx(store, env) {
-  const [votes, rsvp, payconf, accounts] = await Promise.all([
-    loadAll(store, "votes/"),
-    loadAll(store, "rsvp/"),
-    loadAll(store, "payconf/"),
-    loadAll(store, "people/"),
-  ]);
+  const [votes, accounts] = await Promise.all([loadAll(store, "votes/"), loadAll(store, "people/")]);
   const names = {}, phones = {}, avatarAt = {};
   Object.entries(accounts).forEach(([id, a]) => { names[id] = a.name; phones[id] = a.phone; if (a.avatarAt) avatarAt[id] = a.avatarAt; });
-  return { votes, rsvp, payconf, accounts, names, phones, avatarAt, claimed: Object.keys(accounts), today: env.TODAY || todayCL() };
+  return { votes, accounts, names, phones, avatarAt, claimed: Object.keys(accounts), today: env.TODAY || todayCL() };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -185,7 +176,7 @@ export async function handle({ method, path, headers, body, store, env }) {
   if (method === "GET" && path === "/roster") {
     if (!familyOk) return fail(401, "bad_family_code", "Código familiar incorrecto.");
     const keys = await store.list("people/");
-    return ok({ households: HOUSEHOLDS, claimed: keys.map((k) => k.slice("people/".length)), fee: FEE });
+    return ok({ households: HOUSEHOLDS, claimed: keys.map((k) => k.slice("people/".length)) });
   }
   if (method === "POST" && path === "/register") {
     if (!familyOk) return fail(401, "bad_family_code", "Código familiar incorrecto.");
@@ -247,49 +238,27 @@ export async function handle({ method, path, headers, body, store, env }) {
       }
       const hostSide = isHostSide(d);
       const details = !!d.published || hostSide;
-      const mineR = me && ctx.rsvp[me.id] && ctx.rsvp[me.id][id];
       const out = {
         id, month: d.month, hostId: d.hostId, createdBy: d.createdBy || null,
         published: !!d.published, votingOpen: c.votingOpen, revealed: c.revealed, revealedAt,
-        title: "", date: "", time: "", place: "", dishes: [], dressCode: "", bring: "", notice: "", payInfo: "", photoAt: 0, gallery: {},
-        attendees: [], declined: [], noReply: [], pending: [],
-        myRsvp: mineR ? mineR.status : null, myPay: "none", iVoted: me ? c.voted.some((p) => p.id === me.id) : false,
+        title: "", date: "", time: "", place: "", dishes: [], dressCode: "", bring: "", notice: "", photoAt: 0, gallery: {},
+        pending: [], votesDone: c.voted.length, votesTotal: c.voters.length, iVoted: me ? c.voted.some((p) => p.id === me.id) : false,
         isHostSide: hostSide,
       };
       if (details) {
         Object.assign(out, {
           title: d.title || "", date: d.date || "", time: d.time || "", place: d.place || "",
-          dishes: d.dishes || [], dressCode: d.dressCode || "", bring: d.bring || "", notice: d.notice || "", payInfo: d.payInfo || "", photoAt: d.photoAt || 0, gallery: d.gallery || {},
+          dishes: d.dishes || [], dressCode: d.dressCode || "", bring: d.bring || "", notice: d.notice || "", photoAt: d.photoAt || 0, gallery: d.gallery || {},
         });
       }
-      if (d.published || hostSide) {
-        out.attendees = c.attendees.map((p) => p.id);
-        out.declined = c.declined.map((p) => p.id);
-        out.noReply = c.noReply.map((p) => p.id);
-        out.pending = c.revealed ? [] : c.pending.map((p) => p.id);
-      }
-      if (me && mineR && mineR.status === "yes") {
-        const conf = ctx.payconf[id] && ctx.payconf[id][me.id];
-        out.myPay = conf ? "confirmed" : mineR.paidClaimed ? "claimed" : "none";
-      }
-      if (hostSide) {
-        const conf = ctx.payconf[id] || {};
-        out.payments = c.attendees.map((p) => {
-          const r = ctx.rsvp[p.id][id];
-          return { personId: p.id, state: conf[p.id] ? "confirmed" : r.paidClaimed ? "claimed" : "none" };
-        });
-        const nConf = out.payments.filter((x) => x.state === "confirmed").length;
-        out.money = { expected: c.attendees.length * FEE, received: nConf * FEE };
-        out.contacts = {};
-        [...c.attendees, ...c.noReply].forEach((p) => { if (ctx.phones[p.id]) out.contacts[p.id] = ctx.phones[p.id]; });
-      }
+      if (d.published || hostSide) out.pending = c.revealed ? [] : c.pending.map((p) => p.id);
       if (c.revealed) out.results = dinnerResults(d, c, ctx.votes, ctx.names);
       dinners.push(out);
     }
     dinners.sort((a, b) => (b.month || "").localeCompare(a.month || ""));
     const season = seasonSummary(dinners);
     return ok({
-      households: HOUSEHOLDS, fee: FEE, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt, banner: bannerIdx || [],
+      households: HOUSEHOLDS, claimed: ctx.claimed, names: ctx.names, avatarAt: ctx.avatarAt, banner: bannerIdx || [],
       me: me.id, profile: { name: ctx.names[me.id], phone: ctx.phones[me.id], email: ctx.accounts[me.id].email },
       mine: ctx.votes[me.id] || {},
       dinners, season,
@@ -472,50 +441,6 @@ export async function handle({ method, path, headers, body, store, env }) {
     return ok({ ok: true });
   }
 
-  if (path === "/rsvp") {
-    const e = needMe(); if (e) return e;
-    const id = body && body.dinnerId;
-    const d = await store.get(`dinners/${id}`);
-    if (!d) return fail(404, "not_found", "Cena no encontrada.");
-    if (me.h === d.hostId) return fail(403, "is_host", "Eres anfitrión de esta cena.");
-    if (!d.published) return fail(409, "not_published", "La carta aún no está publicada.");
-    if (d.revealed || d.closed) return fail(409, "revealed", "Esta cena ya fue revelada.");
-    const status = body.status;
-    if (!["yes", "no", "none"].includes(status)) return fail(400, "bad_status", "Respuesta no válida.");
-    const mine = (await store.get(`rsvp/${me.id}`)) || {};
-    if (status === "none") delete mine[id];
-    else mine[id] = { status, paidClaimed: status === "yes" ? !!(mine[id] && mine[id].paidClaimed) : false, ts: Date.now() };
-    await store.set(`rsvp/${me.id}`, mine);
-    return ok({ ok: true });
-  }
-
-  if (path === "/pay") {
-    const e = needMe(); if (e) return e;
-    const id = body && body.dinnerId;
-    const mine = (await store.get(`rsvp/${me.id}`)) || {};
-    if (!mine[id] || mine[id].status !== "yes") return fail(409, "not_attending", "Primero confirma tu asistencia.");
-    const conf = (await store.get(`payconf/${id}`)) || {};
-    if (conf[me.id]) return fail(409, "already_confirmed", "El host ya confirmó tu pago.");
-    mine[id].paidClaimed = !!body.claimed;
-    await store.set(`rsvp/${me.id}`, mine);
-    return ok({ ok: true });
-  }
-
-  if (path === "/payconf") {
-    const e = needMe(); if (e) return e;
-    const id = body && body.dinnerId;
-    const d = await store.get(`dinners/${id}`);
-    if (!d) return fail(404, "not_found", "Cena no encontrada.");
-    if (!isHostSide(d)) return fail(403, "forbidden", "Solo los anfitriones confirman pagos.");
-    const target = body.personId;
-    const rs = personById(target) ? await store.get(`rsvp/${target}`) : null;
-    if (!rs || !rs[id] || rs[id].status !== "yes") return fail(400, "not_attending", "Esa persona no confirmó asistencia.");
-    const conf = (await store.get(`payconf/${id}`)) || {};
-    if (body.received) conf[target] = Date.now(); else delete conf[target];
-    await store.set(`payconf/${id}`, conf);
-    return ok({ ok: true });
-  }
-
   if (path === "/vote") {
     const e = needMe(); if (e) return e;
     const id = body && body.dinnerId;
@@ -528,7 +453,6 @@ export async function handle({ method, path, headers, body, store, env }) {
     if (!dinner.published) return fail(409, "not_published", "La carta aún no está publicada.");
     if (c.revealed) return fail(409, "revealed", "Esta cena ya fue revelada.");
     if (!c.votingOpen) return fail(409, "voting_closed", "La votación se abre después de la cena.");
-    if (!c.attendees.some((p) => p.id === me.id)) return fail(403, "not_attendee", "Solo votan quienes asistieron. Confirma tu asistencia primero.");
     const v = validVote(body);
     if (!v) return fail(400, "bad_vote", "Todas las notas deben estar entre 1,0 y 7,0.");
     const mine = ctx.votes[me.id] || {};
@@ -554,10 +478,9 @@ export async function handle({ method, path, headers, body, store, env }) {
     if (action === "deleteDinner") {
       const id = body.dinnerId;
       await store.delete(`dinners/${id}`);
-      await store.delete(`payconf/${id}`);
       await store.delete(`photos/${id}`);
       for (const slot of GALLERY_SLOTS) await store.delete(`gallery/${id}/${slot}`);
-      for (const prefix of ["votes/", "rsvp/"]) {
+      for (const prefix of ["votes/"]) {
         const all = await loadAll(store, prefix);
         for (const [pId, doc] of Object.entries(all)) {
           if (doc[id]) { delete doc[id]; await store.set(`${prefix}${pId}`, doc); }

@@ -271,7 +271,7 @@ async function refresh(){
   if(!S.token)return;
   try{
     const st=await api('GET','/state');
-    S.cfg={households:st.households};S.fee=st.fee;S.claimed=st.claimed;S.names=st.names;S.me=st.me;S.profile=st.profile;S.mine=st.mine;S.dinners=st.dinners;S.season=st.season;S.avatarAt=st.avatarAt||{};S.banner=st.banner||[];S.loaded=true;S.fatal=null;
+    S.cfg={households:st.households};S.claimed=st.claimed;S.names=st.names;S.me=st.me;S.profile=st.profile;S.mine=st.mine;S.dinners=st.dinners;S.season=st.season;S.avatarAt=st.avatarAt||{};S.banner=st.banner||[];S.loaded=true;S.fatal=null;
     const now=new Set(st.dinners.filter(d=>d.revealed).map(d=>d.id));
     if(S.seenIds){const fresh=[...now].filter(id=>!S.seenIds.has(id));if(fresh.length)toast('🏆 Ranking actualizado: se completó una cena nueva')}
     S.seenIds=now;
@@ -429,12 +429,9 @@ function photoCard(d){
 /* ---------- derivados ---------- */
 const hasNews=()=>!!(S.season.lastRevealed&&S.season.lastRevealed.at>S.seenAt);
 function todoFor(d){
-  const m=me();if(!m||!d.published||d.revealed)return 0;
-  if(m.h===d.hostId)return d.payments?d.payments.filter(p=>p.state==='claimed').length:0;
-  if(!d.myRsvp&&!d.votingOpen)return 1;
-  if(d.votingOpen&&d.myRsvp==='yes'&&!d.iVoted)return 1;
-  if(!d.votingOpen&&d.myRsvp==='yes'&&d.myPay==='none')return 1;
-  return 0;
+  const m=me();if(!m||d.revealed)return 0;
+  if(m.h===d.hostId)return d.isHostSide&&!d.published?1:0;
+  return d.published&&d.votingOpen&&!d.iVoted?1:0;
 }
 const todoTotal=()=>S.dinners.reduce((a,d)=>a+todoFor(d),0);
 
@@ -485,7 +482,7 @@ function renderAuth(){
     body+='<div class="center" style="margin-top:16px"><button class="link" data-act="gotologin">Ya tengo cuenta</button></div>';
   }else{
     title='Tus datos';sub='Así te verán los demás';
-    body='<div class="center" style="margin-bottom:16px"><div class="avpick">'+(a.avatar?'<img src="'+a.avatar+'" alt="Tu foto">':'<span>📷<br>Tu foto</span>')+'</div><div class="row" style="justify-content:center;gap:8px;margin-top:4px"><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="cam">Tomar foto</button><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="gal">Galería</button></div><div class="sub" style="margin-top:8px">'+(a.avatar?'Listo, puedes cambiarla':'La foto es obligatoria')+'</div></div><p class="sub" style="margin:0 0 16px">Tu teléfono solo lo ven los anfitriones de las cenas a las que vayas.</p>'+err+inp('name','Nombre y apellido','text','Ej: Ian Sitnisky','autocomplete="name"')+inp('phone','Teléfono','tel','+56 9 1234 5678','autocomplete="tel"')+inp('email','Correo','email','tu@correo.com','autocomplete="email" autocapitalize="none"')+inp('password','Contraseña','password','Mínimo 8 caracteres','autocomplete="new-password"')+'<button class="btn block" data-act="register"'+(a.busy?' disabled':'')+'>Crear cuenta</button><div class="center" style="margin-top:14px"><button class="link" data-act="regback">Volver</button></div>';
+    body='<div class="center" style="margin-bottom:16px"><div class="avpick">'+(a.avatar?'<img src="'+a.avatar+'" alt="Tu foto">':'<span>📷<br>Tu foto</span>')+'</div><div class="row" style="justify-content:center;gap:8px;margin-top:4px"><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="cam">Tomar foto</button><button class="btn ghost sm" type="button" data-act="pickavatar" data-m="gal">Galería</button></div><div class="sub" style="margin-top:8px">'+(a.avatar?'Listo, puedes cambiarla':'La foto es obligatoria')+'</div></div><p class="sub" style="margin:0 0 16px">Tu teléfono no se muestra a los demás.</p>'+err+inp('name','Nombre y apellido','text','Ej: Ian Sitnisky','autocomplete="name"')+inp('phone','Teléfono','tel','+56 9 1234 5678','autocomplete="tel"')+inp('email','Correo','email','tu@correo.com','autocomplete="email" autocapitalize="none"')+inp('password','Contraseña','password','Mínimo 8 caracteres','autocomplete="new-password"')+'<button class="btn block" data-act="register"'+(a.busy?' disabled':'')+'>Crear cuenta</button><div class="center" style="margin-top:14px"><button class="link" data-act="regback">Volver</button></div>';
   }
   return '<div class="ahero" style="--c:'+col+'">'+ILL+'<h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div><div class="sheet"><div class="card">'+body+'</div></div>';
 }
@@ -495,13 +492,9 @@ function statusChip(d,m){
   const isHost=m.h===d.hostId;
   if(d.revealed)return chip('Resultados listos','gold');
   if(!d.published)return d.isHostSide?chip('Borrador'):chip('En preparación');
-  if(isHost)return d.votingOpen?chip('Votando · faltan '+d.pending.length,'purple'):chip(d.attendees.length+' confirmados','ok');
-  if(d.votingOpen){
-    if(d.myRsvp==='yes')return d.iVoted?chip('Votaste · faltan '+d.pending.length,'ok'):chip('Te toca votar','warn');
-    return chip('Votación abierta','purple');
-  }
-  if(!d.myRsvp)return chip('Confirma asistencia','warn');
-  return d.myRsvp==='yes'?chip('Vas','ok'):chip('No vas');
+  if(!d.votingOpen)return chip(isHost?'Publicada':'Próxima','ok');
+  if(isHost)return chip('Votando · faltan '+d.pending.length,'purple');
+  return d.iVoted?chip('Votaste · faltan '+d.pending.length,'ok'):chip('Te toca votar','warn');
 }
 function dinnerRow(d,m){
   const host=hh(d.hostId);
@@ -541,7 +534,6 @@ function renderForm(){
   h+='<div class="field"><label class="label">Disfraz / dress code</label><input type="text" id="f-dress" maxlength="120" placeholder="Ej: Disfraz de los 80" value="'+esc(f.dressCode||'')+'"></div>';
   h+='<div class="field"><label class="label">Qué hay que traer</label><input type="text" id="f-bring" maxlength="120" placeholder="Ej: Cada uno trae sus cervezas" value="'+esc(f.bring||'')+'"></div>';
   h+='<div class="field" style="margin-bottom:0"><label class="label">Mensaje para los invitados</label><textarea id="f-notice" maxlength="300" style="min-height:76px" placeholder="Ej: Prepárense para el invitado sorpresa">'+esc(f.notice||'')+'</textarea></div></div>';
-  h+='<div class="label sec">Cuota</div><div class="card"><div class="sub" style="margin-bottom:12px">Cada invitado paga <b style="color:var(--ink)">'+money(S.fee)+'</b> al host para la comida.</div><div class="field" style="margin-bottom:0"><label class="label">Datos de pago (opcional)</label><textarea id="f-pay" maxlength="200" style="min-height:76px" placeholder="Ej: Transferir a Nombre, banco, cuenta, correo">'+esc(f.payInfo||'')+'</textarea></div></div>';
   h+='<button class="btn block" data-act="saveform">'+(f.published?'Guardar cambios':'Guardar borrador')+'</button>';
   if(!f.published)h+='<div style="height:10px"></div><button class="btn orange block" data-act="saveform" data-pub="1">Guardar y publicar carta</button>';
   if(f.id&&S.admin){
@@ -554,7 +546,7 @@ function renderForm(){
 function chips(ids,tone){return ids.length?'<div class="chips">'+ids.map(id=>'<span class="chip pc'+(tone?' '+tone:'')+'">'+ava(id,22)+esc(pname(id))+'</span>').join('')+'</div>':'<div class="sub" style="margin-top:6px">Nadie aún</div>'}
 function pendingBlock(d){
   if(!d.pending.length)return '';
-  return '<div class="label" style="margin-top:14px">Faltan por votar</div>'+chips(d.pending,'purple');
+  return '<div class="label" style="margin-top:14px">Faltan por votar · '+d.votesDone+' de '+d.votesTotal+' ya votaron</div>'+chips(d.pending,'purple');
 }
 function renderDetail(){
   const d=byId(S.view.id);
@@ -577,47 +569,13 @@ function renderDetail(){
     h+='</div>';
   }
   h+=galleryCard(d);
-  if(d.published){
-    h+='<div class="card"><div class="label">Asistencia</div>';
-    if(!isHost&&!d.revealed){
-      h+='<div class="rsvp"><button class="btn'+(d.myRsvp==='yes'?' sel yes':'')+'" data-act="rsvp" data-id="'+esc(d.id)+'" data-s="yes">Sí voy</button><button class="btn'+(d.myRsvp==='no'?' sel no':'')+'" data-act="rsvp" data-id="'+esc(d.id)+'" data-s="no">No puedo</button></div>';
-    }
-    h+='<div class="sub" style="margin-top:12px">Van · '+d.attendees.length+'</div>'+chips(d.attendees,'ok');
-    if(d.declined.length)h+='<div class="sub" style="margin-top:12px">No van</div>'+chips(d.declined);
-    if(d.noReply.length&&!d.revealed)h+='<div class="sub" style="margin-top:12px">Sin responder</div>'+chips(d.noReply);
-    h+='</div>';
-    if(!isHost&&d.myRsvp==='yes'){
-      h+='<div class="card"><div class="label">Cuota para la comida</div><div class="money" style="margin:6px 0 2px">'+money(S.fee)+'</div><div class="sub" style="margin-bottom:12px">Se paga a '+esc(host?host.name:'')+'.</div>';
-      if(d.payInfo)h+='<div class="msg" style="white-space:pre-wrap;margin:0 0 14px">'+esc(d.payInfo)+'</div>';
-      if(d.myPay==='confirmed')h+=chip('Pago confirmado por el host','ok');
-      else if(d.myPay==='claimed')h+=chip('Avisaste el pago · esperando confirmación','warn')+' <button class="link" data-act="pay" data-id="'+esc(d.id)+'" data-c="0">Deshacer</button>';
-      else h+='<button class="btn orange block" data-act="pay" data-id="'+esc(d.id)+'" data-c="1">Ya pagué '+money(S.fee)+'</button>';
-      h+='</div>';
-    }
-    if(d.isHostSide&&d.payments){
-      const pct=d.money.expected?Math.round(d.money.received/d.money.expected*100):0;
-      h+='<div class="card"><div class="label">Cobros de tu cena</div><div class="row" style="margin:10px 0 0;align-items:flex-end"><div><div class="sub">Recibido</div><div class="money">'+money(d.money.received)+'</div></div><div style="text-align:right"><div class="sub">Esperado · '+d.attendees.length+' × '+money(S.fee)+'</div><div class="money" style="color:var(--mut)">'+money(d.money.expected)+'</div></div></div><div class="prog" style="margin-bottom:8px"><i style="width:'+pct+'%"></i></div>';
-      if(!d.payments.length)h+='<div class="sub">Aún no hay invitados confirmados.</div>';
-      d.payments.forEach(p=>{
-        const st=p.state;const ph=d.contacts&&d.contacts[p.personId];
-        h+='<div class="who"><div class="row" style="justify-content:flex-start;min-width:0;gap:12px">'+ava(p.personId,38)+'<div class="col"><div class="t">'+esc(fullName(p.personId))+'</div><div class="sub">'+(ph?'<a href="tel:'+esc(ph)+'">'+esc(ph)+'</a> · ':'')+(st==='confirmed'?'Recibido':st==='claimed'?'Dice que pagó':'Pendiente')+'</div></div></div><button class="btn sm '+(st==='confirmed'?'ghost':'')+'" data-act="payconf" data-id="'+esc(d.id)+'" data-p="'+p.personId+'" data-r="'+(st==='confirmed'?'0':'1')+'">'+(st==='confirmed'?'Deshacer':'Recibido')+'</button></div>';
-      });
-      h+='</div>';
-      const nr=d.noReply.filter(id=>d.contacts&&d.contacts[id]);
-      if(nr.length&&!d.revealed){
-        h+='<div class="card"><div class="label">Sin responder · contacto</div>'+nr.map(id=>'<div class="who"><div class="t">'+esc(fullName(id))+'</div><a href="tel:'+esc(d.contacts[id])+'" class="sub">'+esc(d.contacts[id])+'</a></div>').join('')+'</div>';
-      }
-    }
-  }
   if(d.revealed)h+=renderResults(d);
   else if(d.published){
     if(isHost){
-      if(d.votingOpen)h+='<div class="card center" style="padding:24px 16px"><h3>Los invitados están votando</h3><p class="sub" style="margin:6px 0 0">No votas en tu propia cena. El resultado se revela cuando todos los que asistieron hayan votado.</p>'+pendingBlock(d)+'</div>';
+      if(d.votingOpen)h+='<div class="card center" style="padding:24px 16px"><h3>Los invitados están votando</h3><p class="sub" style="margin:6px 0 0">No votas en tu propia cena. El resultado se revela cuando todos hayan votado.</p>'+pendingBlock(d)+'</div>';
       else if(d.isHostSide)h+='<div class="card"><div class="label">Después de la cena</div><p class="sub" style="margin:6px 0 14px">La votación se abre sola al día siguiente de la fecha, o ábrela tú ahora.</p><button class="btn block" data-act="openvoting" data-id="'+esc(d.id)+'">Abrir votación</button></div>';
     }else if(!d.votingOpen){
       h+='<div class="card center" style="padding:24px 16px"><h3>Votación después de la cena</h3><p class="sub" style="margin:6px 0 0">Aquí pondrás tus notas una vez que se haga la cena.</p></div>';
-    }else if(d.myRsvp!=='yes'){
-      h+='<div class="card center" style="padding:24px 16px"><h3>Solo votan quienes asistieron</h3><p class="sub" style="margin:6px 0 16px">Si fuiste a esta cena, confírmalo para votar.</p><button class="btn" data-act="rsvp" data-id="'+esc(d.id)+'" data-s="yes">Sí asistí</button></div>';
     }else h+=renderVoteForm(d);
   }
   if(S.admin&&!d.revealed){
@@ -636,7 +594,7 @@ function getDraft(d){
 const pctOf=v=>((v-1)/6*100).toFixed(1)+'%';
 function renderVoteForm(d){
   const dr=getDraft(d);const complete=CRITERIA.every(c=>typeof dr.scores[c.k]==='number');
-  let h='<div class="card"><div class="row" style="margin-bottom:4px"><h3>Tu voto</h3>'+(dr.saved?chip('Guardado','ok'):'')+'</div><p class="sub" style="margin:0 0 6px">Notas de 1,0 a 7,0, todas obligatorias. Nadie ve los resultados hasta que todos voten.</p>';
+  let h='<div class="card"><div class="row" style="margin-bottom:4px"><h3>Tu voto</h3>'+(dr.saved?chip('Guardado','ok'):'')+'</div><p class="sub" style="margin:0 0 6px">Elige una nota de 1,0 a 7,0 en cada criterio y toca «Guardar votación». Tu voto cuenta desde que lo guardas, y puedes cambiarlo hasta que se revele. Nadie ve los resultados hasta que todos voten.</p>';
   CRITERIA.forEach(c=>{
     const v=dr.scores[c.k];const has=typeof v==='number';
     h+='<div class="crit" style="--c:'+c.c+'"><div class="crit-h"><span class="nm"><i></i>'+esc(c.t)+'</span><b class="val'+(has?'':' empty')+'" id="val-'+c.k+'">'+(has?fmt(v)+' '+face(v):'sin nota')+'</b></div><div class="slider"><button data-act="dec" data-k="'+c.k+'" aria-label="Bajar">−</button><input type="range" min="1" max="7" step="0.1" value="'+(has?v:4)+'" data-k="'+c.k+'" id="rng-'+c.k+'" style="--p:'+pctOf(has?v:4)+'"><button data-act="inc" data-k="'+c.k+'" aria-label="Subir">+</button></div></div>';
@@ -644,7 +602,7 @@ function renderVoteForm(d){
   h+='<div class="scale"><span>1,0</span><span>7,0</span></div>';
   h+='<div class="field" style="margin-top:18px"><label class="label">Mensaje para los anfitriones · opcional</label><textarea id="v-msg" maxlength="400" placeholder="Algo lindo, un chiste o un tip para la próxima">'+esc(dr.msg)+'</textarea></div>';
   h+='<label class="checkrow"><input type="checkbox" id="v-signed"'+(dr.signed?' checked':'')+'> Firmar el mensaje con mi nombre</label>';
-  h+='<button class="btn orange block" id="submit-vote" data-act="submitvote"'+(complete?'':' disabled')+'>'+(dr.saved?'Actualizar mi voto':'Enviar mi voto')+'</button>';
+  h+='<button class="btn orange block" id="submit-vote" data-act="submitvote"'+(complete?'':' disabled')+'>'+'Guardar votación'+'</button>';
   h+=pendingBlock(d);
   return h+'</div>';
 }
@@ -672,8 +630,8 @@ function deltaHtml(x){
 }
 function renderRanking(){
   const s=S.season;const data=s.ranking||[];
-  let h=hero('#F26B21','<div class="hero-row"><div><div class="hello">Temporada '+new Date().getFullYear()+'</div><h1>Ranking</h1></div><div class="pts">'+ic('trophy',16)+s.hosted+'/'+s.total+'</div></div><div class="sub" style="margin-top:6px">'+(s.complete?'Ponderado final de la temporada':'Suma una cena cuando todos sus asistentes ya votaron')+'</div>')+'<main>';
-  if(!data.length)return h+'<div class="card center" style="padding:30px 16px"><h3>Aún bloqueado</h3><p class="sub" style="margin:6px 0 0">El ranking aparece cuando una cena está completa: el host la publicó y todos sus asistentes ya votaron. Después se actualiza con cada cena que se completa.</p></div>'+seasonProgress()+'</main>';
+  let h=hero('#F26B21','<div class="hero-row"><div><div class="hello">Temporada '+new Date().getFullYear()+'</div><h1>Ranking</h1></div><div class="pts">'+ic('trophy',16)+s.hosted+'/'+s.total+'</div></div><div class="sub" style="margin-top:6px">'+(s.complete?'Ponderado final de la temporada':'Suma una cena cuando todos ya votaron')+'</div>')+'<main>';
+  if(!data.length)return h+'<div class="card center" style="padding:30px 16px"><h3>Aún bloqueado</h3><p class="sub" style="margin:6px 0 0">El ranking aparece cuando una cena está completa: el host la publicó y todos ya votaron. Después se actualiza con cada cena que se completa.</p></div>'+seasonProgress()+'</main>';
   if(s.complete)h+='<div class="notice" style="margin:0 0 12px">¡Temporada completa! Este es el ponderado final de todas las cenas.</div>';
   else if(s.lastRevealed){
     const lh=hh(s.lastRevealed.hostId);
@@ -811,7 +769,7 @@ document.addEventListener('click',async e=>{
       const hostId=document.getElementById('f-host').value;
       const dishes=document.getElementById('f-dishes').value.split('\n').map(s=>s.trim()).filter(Boolean);
       if(!month){toast('Pon una fecha o un mes');return}
-      const payload={id:S.form.id,month,hostId,date,time:val('f-time'),title:val('f-title'),place:val('f-place'),dishes,dressCode:val('f-dress'),bring:val('f-bring'),notice:val('f-notice'),payInfo:val('f-pay')};
+      const payload={id:S.form.id,month,hostId,date,time:val('f-time'),title:val('f-title'),place:val('f-place'),dishes,dressCode:val('f-dress'),bring:val('f-bring'),notice:val('f-notice')};
       const saved=await api('POST','/dinner',payload);
       if(el.dataset.pub==='1'){
         try{await api('POST','/publish',{dinnerId:saved.id});toast('¡Carta publicada! 🎉')}
@@ -821,13 +779,6 @@ document.addEventListener('click',async e=>{
     }
     else if(a==='publish'){await api('POST','/publish',{dinnerId:el.dataset.id});toast('¡Carta publicada! 🎉');await refresh();render()}
     else if(a==='openvoting'){await api('POST','/openvoting',{dinnerId:el.dataset.id});toast('Votación abierta');await refresh();render()}
-    else if(a==='rsvp'){
-      const d=byId(el.dataset.id);const s=el.dataset.s;
-      await api('POST','/rsvp',{dinnerId:d.id,status:d.myRsvp===s&&!d.votingOpen?'none':s});
-      await refresh();render();
-    }
-    else if(a==='pay'){await api('POST','/pay',{dinnerId:el.dataset.id,claimed:el.dataset.c==='1'});toast(el.dataset.c==='1'?'Listo, le avisamos al host':'Aviso deshecho');await refresh();render()}
-    else if(a==='payconf'){await api('POST','/payconf',{dinnerId:el.dataset.id,personId:el.dataset.p,received:el.dataset.r==='1'});await refresh();render()}
     else if(a==='askdel'){S.confirm='del:'+el.dataset.id;render()}
     else if(a==='askclose'){S.confirm='close:'+el.dataset.id;render()}
     else if(a==='askrelease'){S.confirm='rel:'+el.dataset.p;render()}
@@ -860,7 +811,7 @@ document.addEventListener('click',async e=>{
   }catch(err){
     console.error(err);
     toast(err&&err.message?err.message:'No se pudo completar, intenta otra vez');
-    if(err&&(err.error==='revealed'||err.error==='voting_closed'||err.error==='not_attendee')){await refresh();render()}
+    if(err&&(err.error==='revealed'||err.error==='voting_closed')){await refresh();render()}
   }
 });
 
